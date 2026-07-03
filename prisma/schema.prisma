@@ -1,0 +1,616 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum Role {
+  PATIENT_ADMIN // admin familiar (app-medcare)
+  FAMILY_MEMBER // membro da família com acesso restrito aos próprios dados
+  CAREGIVER // cuidador, acessa múltiplas famílias via código
+  DOCTOR // médico, login por CRM (web-medcare)
+  CLINIC_ADMIN // administrador de clínica (web-medcare)
+  PLATFORM_ADMIN // administrador da plataforma (web-medcare)
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum BiologicalSex {
+  MALE
+  FEMALE
+}
+
+enum MedicationForm {
+  TABLET
+  CAPSULE
+  DROPS
+  INJECTION
+  SYRUP
+  OINTMENT
+  PATCH
+  OTHER
+}
+
+enum DoseState {
+  TAKEN
+  LATE
+  MISSED
+}
+
+enum VaccineStatus {
+  UP_TO_DATE
+  BOOSTER_DUE
+}
+
+enum ExamSource {
+  GMAIL
+  DOCTOR
+  MANUAL
+}
+
+enum ProcedureStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AccessStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum AccessValidity {
+  PERMANENT
+  TEMPORARY
+}
+
+enum PlanType {
+  CLINIC
+  DOCTOR
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+}
+
+enum PaymentMethod {
+  PIX
+  BOLETO
+  CREDIT_CARD
+  TRANSFER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  LATE
+  CANCELLED
+}
+
+enum SupplierCategory {
+  INFRASTRUCTURE
+  SERVICES
+  MARKETING
+  TAX
+}
+
+enum AccountPayableType {
+  ONE_TIME
+  RECURRING
+}
+
+enum AccountPayableStatus {
+  PAID
+  PENDING
+  OVERDUE
+  PAID_LATE
+}
+
+enum NotificationChannel {
+  PUSH
+  WHATSAPP
+}
+
+// ─────────────────────────────────────────────
+// Identidade / Autenticação
+// ─────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  role         Role
+  phone        String?
+  cpfEncrypted Bytes? // AES-256-GCM — nunca em texto plano
+  cpfHash      String?    @unique // blind index (HMAC) para busca sem decriptar
+  status       UserStatus @default(ACTIVE)
+  mfaEnabled   Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  familyMember       FamilyMember?
+  doctor             Doctor?
+  clinicAdminProfile ClinicAdminProfile?
+  refreshTokens      RefreshToken[]
+  caregiverAccesses  CaregiverAccess[]
+  auditLogs          AuditLog[]
+  notificationPrefs  NotificationPreference[]
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  jti       String    @unique
+  tokenHash String
+  revoked   Boolean   @default(false)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────
+// Família / Paciente
+// ─────────────────────────────────────────────
+
+model Family {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members           FamilyMember[]
+  caregiverAccesses CaregiverAccess[]
+
+  @@map("families")
+}
+
+model FamilyMember {
+  id                String         @id @default(cuid())
+  familyId          String
+  userId            String?        @unique // null quando o membro não tem login próprio (ex.: menor de idade)
+  fullNameEncrypted Bytes
+  displayName       String // nome não sigiloso para exibição em listas/avatares
+  relationship      String // "Você", "Esposa", "Filho", etc.
+  birthDate         DateTime
+  biologicalSex     BiologicalSex?
+  cpfEncrypted      Bytes?
+  cpfHash           String?        @unique
+  isAdmin           Boolean        @default(false)
+  legalGuardianId   String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  family        Family               @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  healthProfile HealthProfile?
+  medications   Medication[]
+  vaccines      Vaccine[]
+  exams         Exam[]
+  diagnostics   Diagnostic[]
+  procedures    Procedure[]
+  accessGrants  MedicalAccessGrant[]
+
+  @@index([familyId])
+  @@map("family_members")
+}
+
+model HealthProfile {
+  id             String   @id @default(cuid())
+  memberId       String   @unique
+  weightKg       Decimal? @db.Decimal(5, 2)
+  heightM        Decimal? @db.Decimal(3, 2)
+  bloodType      String?
+  conditions     String[] // ex.: Hipertensão, Diabetes tipo 2
+  allergies      String[] // ex.: Dipirona, Penicilina — crítico
+  notesEncrypted Bytes? // observações clínicas livres
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("health_profiles")
+}
+
+// ─────────────────────────────────────────────
+// Prontuário
+// ─────────────────────────────────────────────
+
+model Medication {
+  id                  String         @id @default(cuid())
+  memberId            String
+  name                String
+  dosage              String
+  dosageUnit          String
+  form                MedicationForm
+  frequency           String
+  scheduleTimes       String[] // ["08:00", "20:00"]
+  weekDays            String[] // ["seg", "ter", ...] vazio = todos os dias
+  specialInstructions String?
+  continuousUse       Boolean        @default(true)
+  startDate           DateTime
+  endDate             DateTime?
+  stockQuantity       Int?
+  prescriptionFileId  String? // referência a objeto no storage (MinIO)
+  active              Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  member      FamilyMember           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doseRecords MedicationDoseRecord[]
+
+  @@index([memberId])
+  @@map("medications")
+}
+
+model MedicationDoseRecord {
+  id           String    @id @default(cuid())
+  medicationId String
+  scheduledAt  DateTime
+  takenAt      DateTime?
+  state        DoseState
+  recordedById String // User.id de quem registrou (paciente, cuidador, etc.)
+  createdAt    DateTime  @default(now())
+
+  medication Medication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+
+  @@index([medicationId])
+  @@index([scheduledAt])
+  @@map("medication_dose_records")
+}
+
+model Vaccine {
+  id                  String        @id @default(cuid())
+  memberId            String
+  name                String
+  administrationRoute String
+  totalDoses          Int
+  doseIntervalDays    Int?
+  virusType           String?
+  status              VaccineStatus @default(UP_TO_DATE)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  member FamilyMember  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doses  VaccineDose[]
+
+  @@index([memberId])
+  @@map("vaccines")
+}
+
+model VaccineDose {
+  id                  String    @id @default(cuid())
+  vaccineId           String
+  doseNumber          Int
+  appliedAt           DateTime
+  manufacturer        String
+  batchNumber         String // rastreabilidade — sensível
+  location            String
+  administrationRoute String
+  nextBoosterAt       DateTime?
+  createdAt           DateTime  @default(now())
+
+  vaccine Vaccine @relation(fields: [vaccineId], references: [id], onDelete: Cascade)
+
+  @@index([vaccineId])
+  @@map("vaccine_doses")
+}
+
+model Exam {
+  id        String     @id @default(cuid())
+  memberId  String
+  name      String
+  examDate  DateTime
+  fileId    String? // referência a objeto no storage (MinIO)
+  source    ExamSource @default(MANUAL)
+  createdAt DateTime   @default(now())
+
+  member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@map("exams")
+}
+
+model Diagnostic {
+  id                   String   @id @default(cuid())
+  memberId             String
+  doctorId             String?
+  title                String
+  descriptionEncrypted Bytes
+  conductEncrypted     Bytes
+  diagnosedAt          DateTime
+  createdAt            DateTime @default(now())
+
+  member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor Doctor?      @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@map("diagnostics")
+}
+
+model Procedure {
+  id                   String          @id @default(cuid())
+  memberId             String
+  doctorId             String?
+  title                String
+  status               ProcedureStatus @default(IN_PROGRESS)
+  descriptionEncrypted Bytes?
+  performedAt          DateTime
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor Doctor?      @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@map("procedures")
+}
+
+// ─────────────────────────────────────────────
+// Autorização de acesso ao prontuário
+// (núcleo que conecta app-medcare <-> web-medcare)
+// ─────────────────────────────────────────────
+
+model MedicalAccessGrant {
+  id        String         @id @default(cuid())
+  memberId  String
+  doctorId  String?
+  clinicId  String?
+  codeHash  String         @unique // código de 6-8 dígitos, nunca salvo em texto plano
+  status    AccessStatus   @default(PENDING)
+  validity  AccessValidity @default(TEMPORARY)
+  expiresAt DateTime?
+  grantedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime       @default(now())
+
+  member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor Doctor?      @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  clinic Clinic?      @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@index([doctorId])
+  @@index([status])
+  @@map("medical_access_grants")
+}
+
+model CaregiverAccess {
+  id          String       @id @default(cuid())
+  caregiverId String
+  familyId    String
+  status      AccessStatus @default(PENDING)
+  grantedAt   DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime     @default(now())
+
+  caregiver User   @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+  family    Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@index([caregiverId])
+  @@index([familyId])
+  @@map("caregiver_accesses")
+}
+
+// ─────────────────────────────────────────────
+// Médicos / Clínicas
+// ─────────────────────────────────────────────
+
+model Doctor {
+  id          String     @id @default(cuid())
+  userId      String     @unique
+  crmNumber   String
+  crmState    String
+  specialties String[]
+  planId      String?
+  status      UserStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          Plan?                @relation(fields: [planId], references: [id], onDelete: SetNull)
+  clinics       ClinicDoctorLink[]
+  accessGrants  MedicalAccessGrant[]
+  diagnostics   Diagnostic[]
+  procedures    Procedure[]
+  subscriptions Subscription[]
+
+  @@unique([crmNumber, crmState])
+  @@index([status])
+  @@map("doctors")
+}
+
+model Clinic {
+  id                 String     @id @default(cuid())
+  legalNameEncrypted Bytes
+  tradeName          String
+  cnpjEncrypted      Bytes
+  cnpjHash           String     @unique
+  email              String
+  phone              String
+  address            Json
+  planId             String?
+  status             UserStatus @default(ACTIVE)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  deletedAt          DateTime?
+
+  plan          Plan?                @relation(fields: [planId], references: [id], onDelete: SetNull)
+  doctors       ClinicDoctorLink[]
+  admins        ClinicAdminProfile[]
+  accessGrants  MedicalAccessGrant[]
+  subscriptions Subscription[]
+
+  @@index([status])
+  @@map("clinics")
+}
+
+model ClinicDoctorLink {
+  id       String   @id @default(cuid())
+  clinicId String
+  doctorId String
+  active   Boolean  @default(true)
+  linkedAt DateTime @default(now())
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([clinicId, doctorId])
+  @@map("clinic_doctor_links")
+}
+
+model ClinicAdminProfile {
+  id       String @id @default(cuid())
+  userId   String @unique
+  clinicId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId])
+  @@map("clinic_admin_profiles")
+}
+
+// ─────────────────────────────────────────────
+// Planos / Financeiro (admin da plataforma)
+// ─────────────────────────────────────────────
+
+model Plan {
+  id           String       @id @default(cuid())
+  name         String
+  type         PlanType
+  basePrice    Decimal      @db.Decimal(10, 2)
+  billingCycle BillingCycle @default(MONTHLY)
+  status       UserStatus   @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  doctors       Doctor[]
+  clinics       Clinic[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id            String             @id @default(cuid())
+  planId        String
+  clinicId      String?
+  doctorId      String?
+  paymentMethod PaymentMethod
+  status        SubscriptionStatus @default(ACTIVE)
+  nextDueDate   DateTime
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  plan   Plan    @relation(fields: [planId], references: [id], onDelete: Restrict)
+  clinic Clinic? @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  doctor Doctor? @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+  @@map("subscriptions")
+}
+
+model Supplier {
+  id                String           @id @default(cuid())
+  name              String
+  documentEncrypted Bytes // CNPJ/CPF — AES-256-GCM, nunca em texto plano
+  documentHash      String           @unique // blind index (HMAC) para busca/dedupe sem decriptar
+  email             String
+  phone             String
+  category          SupplierCategory
+  status            UserStatus       @default(ACTIVE)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  accountsPayable AccountPayable[]
+
+  @@map("suppliers")
+}
+
+model AccountPayable {
+  id            String               @id @default(cuid())
+  supplierId    String
+  description   String
+  category      SupplierCategory
+  valueCents    Int
+  dueDate       DateTime
+  paymentMethod PaymentMethod
+  type          AccountPayableType   @default(ONE_TIME)
+  status        AccountPayableStatus @default(PENDING)
+  paidAt        DateTime?
+  receiptFileId String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  @@index([supplierId])
+  @@index([status])
+  @@map("accounts_payable")
+}
+
+// ─────────────────────────────────────────────
+// Notificações
+// ─────────────────────────────────────────────
+
+model NotificationPreference {
+  id                    String              @id @default(cuid())
+  userId                String
+  channel               NotificationChannel
+  category              String // "medicines" | "medicalRecord" | "family"
+  enabled               Boolean             @default(true)
+  reminderMinutesBefore Int?                @default(15)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, category])
+  @@map("notification_preferences")
+}
+
+// ─────────────────────────────────────────────
+// Auditoria
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String // ex.: "VIEW_MEDICAL_RECORD", "DECRYPT_CPF", "LOGIN"
+  targetType String
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
