@@ -41,11 +41,14 @@ export async function sendMail(input: SendMailInput): Promise<void> {
     return
   }
 
-  await client.sendMail({
+  const info = await client.sendMail({
     from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
     to: input.to,
     subject: input.subject,
     html: input.html,
     text: input.text,
   })
+  console.warn(
+    `[mail] SMTP resposta: ${info.response} | accepted: ${JSON.stringify(info.accepted)} | rejected: ${JSON.stringify(info.rejected)} | messageId: ${info.messageId}`,
+  )
 }
