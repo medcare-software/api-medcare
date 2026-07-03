@@ -4,7 +4,14 @@ import { issueTokens } from '../../shared/auth/issue-tokens.js'
 import { authenticate } from '../../shared/middlewares/index.js'
 import { decryptField } from '../../shared/security/index.js'
 import type { RefreshTokenPayload } from '../../shared/types/auth.types.js'
-import { LoginSchema, LogoutSchema, RefreshSchema } from './auth.schema.js'
+import {
+  ForgotPasswordSchema,
+  LoginSchema,
+  LogoutSchema,
+  RefreshSchema,
+  ResetPasswordSchema,
+  VerifyResetCodeSchema,
+} from './auth.schema.js'
 import { authService } from './auth.service.js'
 
 export default async function authRoutes(fastify: FastifyInstance) {
@@ -93,7 +100,56 @@ export default async function authRoutes(fastify: FastifyInstance) {
               specialties: user.doctor.specialties,
             }
           : null,
+        familyMember: user.familyMember
+          ? {
+              id: user.familyMember.id,
+              familyId: user.familyMember.familyId,
+              isAdmin: user.familyMember.isAdmin,
+            }
+          : null,
       },
     })
+  })
+
+  // POST /auth/forgot-password — envia código de 6 dígitos por e-mail
+  fastify.post('/auth/forgot-password', async (req, reply) => {
+    const body = ForgotPasswordSchema.safeParse(req.body)
+    if (!body.success) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: body.error.issues,
+      })
+    }
+    await authService.requestPasswordReset(body.data.email)
+    return reply.status(202).send({ data: { message: 'Código enviado para o e-mail informado' } })
+  })
+
+  // POST /auth/forgot-password/verify — troca o código por um resetSessionToken de curta duração
+  fastify.post('/auth/forgot-password/verify', async (req, reply) => {
+    const body = VerifyResetCodeSchema.safeParse(req.body)
+    if (!body.success) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: body.error.issues,
+      })
+    }
+    const result = await authService.verifyResetCode(fastify, body.data.email, body.data.code)
+    return reply.status(200).send({ data: result })
+  })
+
+  // POST /auth/reset-password — define a nova senha e revoga todas as sessões ativas
+  fastify.post('/auth/reset-password', async (req, reply) => {
+    const body = ResetPasswordSchema.safeParse(req.body)
+    if (!body.success) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: body.error.issues,
+      })
+    }
+    await authService.resetPassword(fastify, body.data.resetSessionToken, body.data.newPassword)
+    return reply.status(204).send()
   })
 }

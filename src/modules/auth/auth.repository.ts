@@ -16,7 +16,15 @@ export const authRepository = {
   },
 
   async findUserById(id: string) {
-    return db.user.findFirst({ where: { id, deletedAt: null }, include: { doctor: true } })
+    return db.user.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        doctor: true,
+        // Só o suficiente pra o client saber o próprio memberId (necessário pra
+        // completar o registro com o health-profile) — nunca o registro inteiro aqui.
+        familyMember: { select: { id: true, familyId: true, isAdmin: true } },
+      },
+    })
   },
 
   async createRefreshToken(data: {
@@ -41,5 +49,32 @@ export const authRepository = {
       where: { userId, revoked: false },
       data: { revoked: true, revokedAt: new Date() },
     })
+  },
+
+  async updatePassword(userId: string, passwordHash: string) {
+    await db.user.update({ where: { id: userId }, data: { passwordHash } })
+  },
+
+  async countRecentPasswordResetRequests(userId: string, since: Date) {
+    return db.passwordResetToken.count({ where: { userId, createdAt: { gte: since } } })
+  },
+
+  async createPasswordResetToken(data: { userId: string; codeHash: string; expiresAt: Date }) {
+    return db.passwordResetToken.create({ data })
+  },
+
+  async findActivePasswordResetToken(userId: string) {
+    return db.passwordResetToken.findFirst({
+      where: { userId, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
+    })
+  },
+
+  async incrementPasswordResetAttempts(id: string) {
+    await db.passwordResetToken.update({ where: { id }, data: { attempts: { increment: 1 } } })
+  },
+
+  async consumePasswordResetToken(id: string) {
+    await db.passwordResetToken.update({ where: { id }, data: { consumedAt: new Date() } })
   },
 }

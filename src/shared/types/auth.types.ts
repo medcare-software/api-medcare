@@ -25,3 +25,13 @@ export interface AuthUser {
   role: Role
   jti: string
 }
+
+// Emitido só por POST /auth/forgot-password/verify, curta duração (ver
+// env.PASSWORD_RESET_SESSION_EXPIRES_IN). Sem `role`, então nunca passa pelo
+// middleware `authenticate` (que exige sub+role) — não pode virar access token.
+export interface PasswordResetSessionPayload {
+  sub: string
+  purpose: 'password_reset'
+  iat?: number
+  exp?: number
+}

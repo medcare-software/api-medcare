@@ -7,6 +7,7 @@ import clinicsRoutes from './modules/clinics/clinics.routes.js'
 import diagnosticsRoutes from './modules/diagnostics/diagnostics.routes.js'
 import doctorsRoutes from './modules/doctors/doctors.routes.js'
 import examsRoutes from './modules/exams/exams.routes.js'
+import familiesRoutes from './modules/families/families.routes.js'
 import filesRoutes from './modules/files/files.routes.js'
 import financialRoutes from './modules/financial/financial.routes.js'
 import medicalAccessRoutes from './modules/medical-access/medical-access.routes.js'
@@ -83,6 +84,7 @@ export async function buildApp() {
 
   // ── Módulos ───────────────────────────────────────────────────────────────
   await app.register(authRoutes, { prefix: env.API_PREFIX })
+  await app.register(familiesRoutes, { prefix: env.API_PREFIX })
   await app.register(doctorsRoutes, { prefix: env.API_PREFIX })
   await app.register(clinicsRoutes, { prefix: env.API_PREFIX })
   await app.register(plansRoutes, { prefix: env.API_PREFIX })

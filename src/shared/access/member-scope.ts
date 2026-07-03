@@ -12,7 +12,7 @@ export function isFamilyRole(role: Role): boolean {
   return FAMILY_ROLES.includes(role)
 }
 
-async function resolveAccessibleFamilyIds(user: AuthUser): Promise<string[]> {
+export async function resolveAccessibleFamilyIds(user: AuthUser): Promise<string[]> {
   if (user.role === 'CAREGIVER') {
     const accesses = await db.caregiverAccess.findMany({
       where: {
@@ -38,11 +38,15 @@ async function resolveAccessibleFamilyIds(user: AuthUser): Promise<string[]> {
  * (PATIENT_ADMIN/FAMILY_MEMBER) ou as famílias com CaregiverAccess ACTIVE (CAREGIVER).
  * PATIENT_ADMIN e FAMILY_MEMBER resolvem para o mesmo conjunto — toda a família —
  * já que não há hoje um campo que restrinja FAMILY_MEMBER a um subconjunto de membros.
+ *
+ * Nunca lança para "sem família vinculada" — retorna `[]` e deixa os asserts de
+ * escopo (assertMemberInScope/assertFamilyInScope) converterem isso em NOT_FOUND,
+ * preservando o contrato de nunca vazar existência via FORBIDDEN.
  */
 export async function resolveAccessibleMemberIds(user: AuthUser): Promise<string[]> {
   const familyIds = await resolveAccessibleFamilyIds(user)
   if (familyIds.length === 0) {
-    throw new AppError({ code: 'FORBIDDEN', message: 'Usuário sem família vinculada' })
+    return []
   }
 
   const members = await db.familyMember.findMany({
@@ -57,6 +61,14 @@ export async function assertMemberInScope(user: AuthUser, memberId: string): Pro
   const memberIds = await resolveAccessibleMemberIds(user)
   if (!memberIds.includes(memberId)) {
     throw new AppError({ code: 'NOT_FOUND', message: 'Registro não encontrado' })
+  }
+}
+
+/** Lança NOT_FOUND (nunca FORBIDDEN) para não vazar a existência de família de terceiros. */
+export async function assertFamilyInScope(user: AuthUser, familyId: string): Promise<void> {
+  const familyIds = await resolveAccessibleFamilyIds(user)
+  if (!familyIds.includes(familyId)) {
+    throw new AppError({ code: 'NOT_FOUND', message: 'Família não encontrada' })
   }
 }
 

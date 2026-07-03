@@ -101,4 +101,15 @@ export default async function medicationsRoutes(fastify: FastifyInstance) {
     const doses = await medicationsService.listDoses(req.user, id)
     return reply.status(200).send({ data: doses })
   })
+
+  // DELETE /medications/:id/doses/:doseId — desfazer registro de dose
+  fastify.delete(
+    '/medications/:id/doses/:doseId',
+    { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
+    async (req, reply) => {
+      const { id, doseId } = req.params as { id: string; doseId: string }
+      await medicationsService.deleteDose(req.user, id, doseId)
+      return reply.status(204).send()
+    },
+  )
 }

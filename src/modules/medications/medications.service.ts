@@ -57,6 +57,19 @@ export const medicationsService = {
     const medication = await getMedicationForRead(user, medicationId)
     return medicationsRepository.findDoseRecordsByMedicationId(medication.id)
   },
+
+  // Permite desfazer o registro de uma dose (ex.: usuário marcou "tomado" por
+  // engano) — só quem pode registrar dose pode apagá-la, e só a dose pertencente
+  // à medicação/família em escopo.
+  async deleteDose(user: AuthUser, medicationId: string, doseId: string) {
+    assertFamilyWriter(user)
+    const medication = await getScopedOrThrow(user, medicationId)
+    const dose = await medicationsRepository.findDoseRecordByIdScoped(doseId, medication.id)
+    if (!dose) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Registro de dose não encontrado' })
+    }
+    await medicationsRepository.deleteDoseRecord(dose.id)
+  },
 }
 
 function assertFamilyWriter(user: AuthUser) {

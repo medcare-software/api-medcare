@@ -55,6 +55,20 @@ const envSchema = z.object({
   MEDICAL_ACCESS_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   MEDICAL_ACCESS_TEMPORARY_GRANT_DAYS: z.coerce.number().int().positive().default(30),
   FILE_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  PASSWORD_RESET_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+  PASSWORD_RESET_SESSION_EXPIRES_IN: z.string().default('5m'),
+  PASSWORD_RESET_MAX_REQUESTS_PER_HOUR: z.coerce.number().int().positive().default(5),
+
+  // ── SMTP (e-mail transacional — esqueci a senha, convite de cuidador) ────────
+  // Opcionais de propósito: sem eles em dev/local, o serviço de e-mail cai para
+  // logar o conteúdo no console em vez de falhar o boot do servidor — ver
+  // src/shared/mail/mail.service.ts.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM_EMAIL: z.string().email().default('medcare@medcaresw.com'),
+  SMTP_FROM_NAME: z.string().default('Medcare'),
 
   // ── Retention / LGPD ───────────────────────────────────────
   AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),

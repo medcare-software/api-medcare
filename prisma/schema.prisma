@@ -144,13 +144,14 @@ model User {
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
 
-  familyMember       FamilyMember?
-  doctor             Doctor?
-  clinicAdminProfile ClinicAdminProfile?
-  refreshTokens      RefreshToken[]
-  caregiverAccesses  CaregiverAccess[]
-  auditLogs          AuditLog[]
-  notificationPrefs  NotificationPreference[]
+  familyMember        FamilyMember?
+  doctor              Doctor?
+  clinicAdminProfile  ClinicAdminProfile?
+  refreshTokens       RefreshToken[]
+  caregiverAccesses   CaregiverAccess[]
+  auditLogs           AuditLog[]
+  notificationPrefs   NotificationPreference[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([role])
   @@index([status])
@@ -171,6 +172,23 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// Código de 6 dígitos enviado por e-mail para "esqueci a senha" — nunca persiste
+// o código em texto plano (mesmo padrão do MedicalAccessGrant.codeHash).
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String    @unique
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 // ─────────────────────────────────────────────

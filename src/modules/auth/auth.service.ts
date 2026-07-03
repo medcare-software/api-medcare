@@ -1,11 +1,18 @@
+import crypto from 'node:crypto'
+
 import bcrypt from 'bcryptjs'
+import type { FastifyInstance } from 'fastify'
 
 import { env } from '../../config/env.js'
 import { AppError } from '../../shared/errors/index.js'
+import { passwordResetCodeTemplate, sendMail } from '../../shared/mail/index.js'
 import { hashForLookup } from '../../shared/security/index.js'
+import type { PasswordResetSessionPayload } from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
 import { authRepository } from './auth.repository.js'
 import type { CrmLoginInput, EmailLoginInput } from './auth.schema.js'
+
+const MAX_RESET_CODE_ATTEMPTS = 5
 
 export const authService = {
   // ── Login ──────────────────────────────────────────────────────────────────
@@ -60,6 +67,94 @@ export const authService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Usuário não encontrado' })
     }
     return user
+  },
+
+  // ── Esqueci a senha ────────────────────────────────────────────────────────
+
+  // Decisão de produto: valida se o e-mail existe (em vez de resposta genérica) —
+  // ver documento de arquitetura, seção 1.4 item 5. Mitigado com rate limit por
+  // e-mail (PASSWORD_RESET_MAX_REQUESTS_PER_HOUR) além do limite global por IP.
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await authRepository.findUserByEmail(email)
+    if (!user) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'E-mail não cadastrado' })
+    }
+
+    const since = new Date(Date.now() - 60 * 60_000)
+    const recentRequests = await authRepository.countRecentPasswordResetRequests(user.id, since)
+    if (recentRequests >= env.PASSWORD_RESET_MAX_REQUESTS_PER_HOUR) {
+      throw new AppError({
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Muitas solicitações. Tente novamente mais tarde.',
+      })
+    }
+
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
+    const codeHash = hashForLookup(code)
+    const expiresAt = new Date(Date.now() + env.PASSWORD_RESET_CODE_TTL_MINUTES * 60_000)
+    await authRepository.createPasswordResetToken({ userId: user.id, codeHash, expiresAt })
+
+    const template = passwordResetCodeTemplate(code, env.PASSWORD_RESET_CODE_TTL_MINUTES)
+    await sendMail({ to: user.email, ...template })
+  },
+
+  async verifyResetCode(
+    fastify: FastifyInstance,
+    email: string,
+    code: string,
+  ): Promise<{ resetSessionToken: string }> {
+    const user = await authRepository.findUserByEmail(email)
+    if (!user) {
+      throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
+    }
+
+    const token = await authRepository.findActivePasswordResetToken(user.id)
+    if (!token) {
+      throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
+    }
+    if (token.expiresAt < new Date() || token.attempts >= MAX_RESET_CODE_ATTEMPTS) {
+      throw new AppError({ code: 'ACCESS_CODE_EXPIRED', message: 'Código expirado' })
+    }
+
+    if (token.codeHash !== hashForLookup(code)) {
+      await authRepository.incrementPasswordResetAttempts(token.id)
+      throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
+    }
+
+    await authRepository.consumePasswordResetToken(token.id)
+
+    const payload: Omit<PasswordResetSessionPayload, 'iat' | 'exp'> = {
+      sub: user.id,
+      purpose: 'password_reset',
+    }
+    const resetSessionToken = fastify.jwt.sign(payload, {
+      expiresIn: env.PASSWORD_RESET_SESSION_EXPIRES_IN,
+    })
+    return { resetSessionToken }
+  },
+
+  async resetPassword(
+    fastify: FastifyInstance,
+    resetSessionToken: string,
+    newPassword: string,
+  ): Promise<void> {
+    let payload: PasswordResetSessionPayload
+    try {
+      payload = fastify.jwt.verify<PasswordResetSessionPayload>(resetSessionToken)
+    } catch {
+      throw new AppError({
+        code: 'TOKEN_INVALID',
+        message: 'Sessão de redefinição inválida ou expirada',
+      })
+    }
+    if (payload.purpose !== 'password_reset') {
+      throw new AppError({ code: 'TOKEN_INVALID', message: 'Sessão de redefinição inválida' })
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS)
+    await authRepository.updatePassword(payload.sub, passwordHash)
+    // Troca de senha derruba todas as sessões ativas — força novo login em todo dispositivo.
+    await authRepository.revokeAllUserRefreshTokens(payload.sub)
   },
 }
 

@@ -49,4 +49,12 @@ export const medicationsRepository = {
       orderBy: { scheduledAt: 'desc' },
     })
   },
+
+  findDoseRecordByIdScoped(id: string, medicationId: string) {
+    return db.medicationDoseRecord.findFirst({ where: { id, medicationId } })
+  },
+
+  deleteDoseRecord(id: string) {
+    return db.medicationDoseRecord.delete({ where: { id } })
+  },
 }
