@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
+import { env } from '../../config/env.js'
 import { FILES_BUCKET, storageClient } from '../../config/storage.js'
 
 export const filesRepository = {
@@ -30,6 +31,11 @@ export const filesRepository = {
 }
 
 async function ensureBucket() {
+  // Em S3 real, o bucket é criado e gerenciado externamente pelo cliente —
+  // pular a checagem evita exigir s3:ListBucket/s3:CreateBucket na IAM policy,
+  // que fica restrita só a s3:PutObject/s3:GetObject.
+  if (env.STORAGE_DRIVER === 's3') return
+
   const exists = await storageClient.bucketExists(FILES_BUCKET)
   if (!exists) {
     await storageClient.makeBucket(FILES_BUCKET)
