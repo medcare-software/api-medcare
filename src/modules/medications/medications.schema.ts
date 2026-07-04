@@ -13,7 +13,7 @@ const MedicationFormEnum = z.enum([
 
 const DoseStateEnum = z.enum(['TAKEN', 'LATE', 'MISSED'])
 
-export const CreateMedicationSchema = z.object({
+const BaseMedicationSchema = z.object({
   memberId: z.string().min(1),
   name: z.string().min(1),
   dosage: z.string().min(1),
@@ -30,7 +30,23 @@ export const CreateMedicationSchema = z.object({
   prescriptionFileId: z.string().min(1).optional(),
 })
 
-export const UpdateMedicationSchema = CreateMedicationSchema.omit({ memberId: true }).partial()
+function endDateNotBeforeStartDate(data: { startDate?: Date | undefined; endDate?: Date | undefined }) {
+  return !data.endDate || !data.startDate || data.endDate >= data.startDate
+}
+
+const dateRangeRefinement: { message: string; path: string[] } = {
+  message: 'Data de término não pode ser anterior à data de início',
+  path: ['endDate'],
+}
+
+export const CreateMedicationSchema = BaseMedicationSchema.refine(
+  endDateNotBeforeStartDate,
+  dateRangeRefinement,
+)
+
+export const UpdateMedicationSchema = BaseMedicationSchema.omit({ memberId: true })
+  .partial()
+  .refine(endDateNotBeforeStartDate, dateRangeRefinement)
 
 export const ListMedicationsQuerySchema = z.object({
   memberId: z.string().min(1),

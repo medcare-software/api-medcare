@@ -18,15 +18,20 @@ export const ListVaccinesQuerySchema = z.object({
   memberId: z.string().min(1),
 })
 
-export const RecordVaccineDoseSchema = z.object({
-  doseNumber: z.number().int().positive(),
-  appliedAt: z.coerce.date(),
-  manufacturer: z.string().min(1),
-  batchNumber: z.string().min(1),
-  location: z.string().min(1),
-  administrationRoute: z.string().min(1),
-  nextBoosterAt: z.coerce.date().optional(),
-})
+export const RecordVaccineDoseSchema = z
+  .object({
+    doseNumber: z.number().int().positive(),
+    appliedAt: z.coerce.date(),
+    manufacturer: z.string().min(1),
+    batchNumber: z.string().min(1),
+    location: z.string().min(1),
+    administrationRoute: z.string().min(1),
+    nextBoosterAt: z.coerce.date().optional(),
+  })
+  .refine((data) => data.appliedAt <= new Date(), {
+    message: 'Data de aplicação não pode estar no futuro',
+    path: ['appliedAt'],
+  })
 
 export type CreateVaccineInput = z.infer<typeof CreateVaccineSchema>
 export type UpdateVaccineInput = z.infer<typeof UpdateVaccineSchema>

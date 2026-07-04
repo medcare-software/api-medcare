@@ -55,8 +55,11 @@ export async function buildApp() {
       return reply.status(error.statusCode).send(error.toJSON())
     }
     const statusCode = (error as { statusCode?: number }).statusCode
-    if (statusCode === 400) {
-      return reply.status(400).send({ code: 'VALIDATION_ERROR', message: (error as Error).message })
+    if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
+      return reply.status(statusCode).send({
+        code: statusCode === 400 ? 'VALIDATION_ERROR' : 'REQUEST_ERROR',
+        message: (error as Error).message,
+      })
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       request.log.error(error)

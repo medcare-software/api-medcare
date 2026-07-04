@@ -13,7 +13,9 @@ const corsPlugin: FastifyPluginAsync = fp(async (fastify) => {
         cb(null, true)
         return
       }
-      cb(new Error('Not allowed by CORS'), false)
+      const error = new Error('Not allowed by CORS') as Error & { statusCode: number }
+      error.statusCode = 403
+      cb(error, false)
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
