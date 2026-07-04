@@ -82,11 +82,13 @@ function toResponse(diagnostic: {
   conductEncrypted: Uint8Array
   diagnosedAt: Date
   createdAt: Date
+  doctor?: { crmNumber: string; crmState: string } | null
 }) {
   return {
     id: diagnostic.id,
     memberId: diagnostic.memberId,
     doctorId: diagnostic.doctorId,
+    doctorCrm: diagnostic.doctor ? `${diagnostic.doctor.crmNumber}/${diagnostic.doctor.crmState}` : null,
     title: diagnostic.title,
     description: decryptField(diagnostic.descriptionEncrypted),
     conduct: decryptField(diagnostic.conductEncrypted),

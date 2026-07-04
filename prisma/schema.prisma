@@ -203,6 +203,7 @@ model Family {
 
   members           FamilyMember[]
   caregiverAccesses CaregiverAccess[]
+  caregiverInvites  CaregiverInvite[]
 
   @@map("families")
 }
@@ -433,6 +434,27 @@ model CaregiverAccess {
   @@index([caregiverId])
   @@index([familyId])
   @@map("caregiver_accesses")
+}
+
+// Convite por e-mail para um cuidador ganhar acesso a uma família — código de
+// 6 dígitos enviado por e-mail, resgatado pelo cuidador em (cuidador)/validate-code.
+// Mesmo padrão de segurança do PasswordResetToken/MedicalAccessGrant: só o hash
+// do código é persistido, nunca o texto plano.
+model CaregiverInvite {
+  id         String       @id @default(cuid())
+  familyId   String
+  email      String
+  codeHash   String       @unique
+  status     AccessStatus @default(PENDING)
+  expiresAt  DateTime
+  redeemedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime     @default(now())
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@map("caregiver_invites")
 }
 
 // ─────────────────────────────────────────────

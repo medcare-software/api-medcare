@@ -16,13 +16,21 @@ interface UpdateDiagnosticData {
   diagnosedAt?: Date
 }
 
+// Doctor não tem campo de nome hoje (schema só tem crmNumber/crmState) — expõe o
+// CRM como identificador do médico autor até haver um campo de nome no modelo.
+const DOCTOR_SELECT = { select: { crmNumber: true, crmState: true } }
+
 export const diagnosticsRepository = {
   findManyByMemberId(memberId: string) {
-    return db.diagnostic.findMany({ where: { memberId }, orderBy: { diagnosedAt: 'desc' } })
+    return db.diagnostic.findMany({
+      where: { memberId },
+      orderBy: { diagnosedAt: 'desc' },
+      include: { doctor: DOCTOR_SELECT },
+    })
   },
 
   findById(id: string) {
-    return db.diagnostic.findUnique({ where: { id } })
+    return db.diagnostic.findUnique({ where: { id }, include: { doctor: DOCTOR_SELECT } })
   },
 
   create(data: CreateDiagnosticData) {

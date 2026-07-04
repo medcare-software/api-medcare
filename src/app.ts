@@ -3,6 +3,7 @@ import Fastify from 'fastify'
 
 import { env } from './config/env.js'
 import authRoutes from './modules/auth/auth.routes.js'
+import caregiverRoutes from './modules/caregiver/caregiver.routes.js'
 import clinicsRoutes from './modules/clinics/clinics.routes.js'
 import diagnosticsRoutes from './modules/diagnostics/diagnostics.routes.js'
 import doctorsRoutes from './modules/doctors/doctors.routes.js'
@@ -85,6 +86,7 @@ export async function buildApp() {
   // ── Módulos ───────────────────────────────────────────────────────────────
   await app.register(authRoutes, { prefix: env.API_PREFIX })
   await app.register(familiesRoutes, { prefix: env.API_PREFIX })
+  await app.register(caregiverRoutes, { prefix: env.API_PREFIX })
   await app.register(doctorsRoutes, { prefix: env.API_PREFIX })
   await app.register(clinicsRoutes, { prefix: env.API_PREFIX })
   await app.register(plansRoutes, { prefix: env.API_PREFIX })

@@ -58,6 +58,7 @@ const envSchema = z.object({
   PASSWORD_RESET_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   PASSWORD_RESET_SESSION_EXPIRES_IN: z.string().default('5m'),
   PASSWORD_RESET_MAX_REQUESTS_PER_HOUR: z.coerce.number().int().positive().default(5),
+  CAREGIVER_INVITE_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(15),
 
   // ── SMTP (e-mail transacional — esqueci a senha, convite de cuidador) ────────
   // Opcionais de propósito: sem eles em dev/local, o serviço de e-mail cai para

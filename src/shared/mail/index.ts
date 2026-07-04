@@ -1,2 +1,2 @@
 export { sendMail } from './mail.service.js'
-export { passwordResetCodeTemplate } from './templates.js'
+export { caregiverInviteCodeTemplate, passwordResetCodeTemplate } from './templates.js'
