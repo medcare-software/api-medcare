@@ -3,8 +3,8 @@ import { z } from 'zod'
 const ExamSourceEnum = z.enum(['GMAIL', 'DOCTOR', 'MANUAL'])
 
 export const CreateExamSchema = z.object({
-  memberId: z.string().min(1),
-  name: z.string().min(1),
+  memberId: z.string().min(1, { message: 'Selecione um membro da família' }),
+  name: z.string().min(1, { message: 'Nome do exame é obrigatório' }),
   examDate: z.coerce.date(),
   fileId: z.string().min(1).optional(),
   source: ExamSourceEnum.default('MANUAL'),

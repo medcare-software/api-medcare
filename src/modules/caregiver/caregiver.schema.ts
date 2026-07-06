@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const CreateCaregiverInviteSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email({ message: 'E-mail inválido' }),
 })
 
 export const RedeemCaregiverInviteSchema = z.object({

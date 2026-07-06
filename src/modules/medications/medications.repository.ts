@@ -35,8 +35,11 @@ export const medicationsRepository = {
     return db.medication.update({ where: { id }, data: omitUndefined(input) })
   },
 
-  deactivate(id: string) {
-    return db.medication.update({ where: { id }, data: { active: false } })
+  deactivate(id: string, reason: string) {
+    return db.medication.update({
+      where: { id },
+      data: { active: false, deactivationReason: reason },
+    })
   },
 
   createDoseRecord(medicationId: string, input: RecordDoseInput & { recordedById: string }) {

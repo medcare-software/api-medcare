@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const CreateGrantSchema = z.object({
-  memberId: z.string().min(1),
+  memberId: z.string().min(1, { message: 'Selecione um membro da família' }),
   validity: z.enum(['PERMANENT', 'TEMPORARY']).default('TEMPORARY'),
 })
 

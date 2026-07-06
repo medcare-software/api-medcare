@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import {
   CreateMedicationSchema,
+  DeactivateMedicationSchema,
   ListMedicationsQuerySchema,
   RecordDoseSchema,
   UpdateMedicationSchema,
@@ -71,7 +72,15 @@ export default async function medicationsRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      await medicationsService.deactivate(req.user, id)
+      const body = DeactivateMedicationSchema.safeParse(req.body ?? {})
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      await medicationsService.deactivate(req.user, id, body.data.reason)
       return reply.status(204).send()
     },
   )

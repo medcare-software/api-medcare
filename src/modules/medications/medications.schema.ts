@@ -14,12 +14,12 @@ const MedicationFormEnum = z.enum([
 const DoseStateEnum = z.enum(['TAKEN', 'LATE', 'MISSED'])
 
 const BaseMedicationSchema = z.object({
-  memberId: z.string().min(1),
-  name: z.string().min(1),
-  dosage: z.string().min(1),
-  dosageUnit: z.string().min(1),
+  memberId: z.string().min(1, { message: 'Selecione um membro da família' }),
+  name: z.string().min(1, { message: 'Nome do medicamento é obrigatório' }),
+  dosage: z.string().min(1, { message: 'Dosagem é obrigatória' }),
+  dosageUnit: z.string().min(1, { message: 'Unidade da dosagem é obrigatória' }),
   form: MedicationFormEnum,
-  frequency: z.string().min(1),
+  frequency: z.string().min(1, { message: 'Frequência é obrigatória' }),
   scheduleTimes: z.array(z.string()).default([]),
   weekDays: z.array(z.string()).default([]),
   specialInstructions: z.string().min(1).optional(),
@@ -62,7 +62,12 @@ export const RecordDoseSchema = z.object({
   state: DoseStateEnum,
 })
 
+export const DeactivateMedicationSchema = z.object({
+  reason: z.string().min(1, { message: 'Motivo da exclusão é obrigatório' }),
+})
+
 export type CreateMedicationInput = z.infer<typeof CreateMedicationSchema>
 export type UpdateMedicationInput = z.infer<typeof UpdateMedicationSchema>
 export type ListMedicationsQuery = z.infer<typeof ListMedicationsQuerySchema>
 export type RecordDoseInput = z.infer<typeof RecordDoseSchema>
+export type DeactivateMedicationInput = z.infer<typeof DeactivateMedicationSchema>

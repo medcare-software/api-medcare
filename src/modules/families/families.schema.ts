@@ -6,21 +6,21 @@ const BiologicalSexEnum = z.enum(['MALE', 'FEMALE'])
 export const RegisterSchema = z.object({
   email: z.string().email({ message: 'E-mail inválido' }),
   password: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
-  phone: z.string().min(8).optional(),
+  phone: z.string().min(8, { message: 'Telefone inválido' }).optional(),
   cpf: z.string().min(11, 'CPF inválido'),
-  fullName: z.string().min(1),
-  displayName: z.string().min(1),
+  fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
+  displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
   birthDate: z.coerce.date(),
   biologicalSex: BiologicalSexEnum.optional(),
 })
 
 export const CreateFamilyMemberSchema = z.object({
-  fullName: z.string().min(1),
-  displayName: z.string().min(1),
-  relationship: z.string().min(1),
+  fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
+  displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
+  relationship: z.string().min(1, { message: 'Parentesco é obrigatório' }),
   birthDate: z.coerce.date(),
   biologicalSex: BiologicalSexEnum.optional(),
-  cpf: z.string().min(11).optional(),
+  cpf: z.string().min(11, { message: 'CPF inválido' }).optional(),
 })
 
 export const UpdateFamilyMemberSchema = CreateFamilyMemberSchema.partial()

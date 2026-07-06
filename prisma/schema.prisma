@@ -276,6 +276,7 @@ model Medication {
   endDate             DateTime?
   stockQuantity       Int?
   prescriptionFileId  String? // referência a objeto no storage (MinIO)
+  deactivationReason  String?
   active              Boolean        @default(true)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt

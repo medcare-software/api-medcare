@@ -38,10 +38,10 @@ export const medicationsService = {
     return medicationsRepository.update(medication.id, input)
   },
 
-  async deactivate(user: AuthUser, id: string) {
+  async deactivate(user: AuthUser, id: string, reason: string) {
     assertFamilyWriter(user)
     const medication = await getScopedOrThrow(user, id)
-    await medicationsRepository.deactivate(medication.id)
+    await medicationsRepository.deactivate(medication.id, reason)
   },
 
   async recordDose(user: AuthUser, medicationId: string, input: RecordDoseInput) {
