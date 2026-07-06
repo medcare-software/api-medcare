@@ -5,7 +5,13 @@ import {
   assertMemberInScope,
   resolveAccessibleMemberIds,
 } from '../../shared/access/index.js'
+import { env } from '../../config/env.js'
 import { AppError } from '../../shared/errors/index.js'
+import {
+  resolveFamilyAdminUserId,
+  resolveFamilyIdForMember,
+  sendPushToUser,
+} from '../../shared/push/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { medicationsRepository } from './medications.repository.js'
 import type {
@@ -35,7 +41,16 @@ export const medicationsService = {
   async update(user: AuthUser, id: string, input: UpdateMedicationInput) {
     assertFamilyWriter(user)
     const medication = await getScopedOrThrow(user, id)
-    return medicationsRepository.update(medication.id, input)
+    const updated = await medicationsRepository.update(medication.id, input)
+    // Reabasteceu acima do limite — libera o próximo aviso de estoque baixo.
+    if (
+      input.stockQuantity !== undefined &&
+      input.stockQuantity > env.MEDICATION_LOW_STOCK_THRESHOLD &&
+      medication.lowStockNotifiedAt
+    ) {
+      await medicationsRepository.resetLowStockNotification(medication.id)
+    }
+    return updated
   },
 
   async deactivate(user: AuthUser, id: string, reason: string) {
@@ -47,10 +62,35 @@ export const medicationsService = {
   async recordDose(user: AuthUser, medicationId: string, input: RecordDoseInput) {
     assertFamilyWriter(user)
     const medication = await getScopedOrThrow(user, medicationId)
-    return medicationsRepository.createDoseRecord(medication.id, {
+    const dose = await medicationsRepository.createDoseRecord(medication.id, {
       ...input,
       recordedById: user.id,
     })
+
+    if (input.state === 'TAKEN' && medication.stockQuantity !== null && medication.stockQuantity > 0) {
+      const newStock = medication.stockQuantity - 1
+      const crossedThreshold =
+        newStock <= env.MEDICATION_LOW_STOCK_THRESHOLD && !medication.lowStockNotifiedAt
+      await medicationsRepository.decrementStock(medication.id, newStock, crossedThreshold)
+
+      if (crossedThreshold) {
+        const familyId = await resolveFamilyIdForMember(medication.memberId)
+        const adminUserId = familyId ? await resolveFamilyAdminUserId(familyId) : null
+        if (adminUserId) {
+          await sendPushToUser(adminUserId, {
+            title: 'Estoque acabando',
+            body: `${medication.name} está acabando (${newStock} restante${newStock === 1 ? '' : 's'}).`,
+            data: {
+              type: 'medication-low-stock',
+              medicationId: medication.id,
+              memberId: medication.memberId,
+            },
+          })
+        }
+      }
+    }
+
+    return dose
   },
 
   async listDoses(user: AuthUser, medicationId: string) {

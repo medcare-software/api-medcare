@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import { authenticate } from '../../shared/middlewares/index.js'
-import { UpsertNotificationPreferenceSchema } from './notifications.schema.js'
+import { RegisterPushTokenSchema, UpsertNotificationPreferenceSchema } from './notifications.schema.js'
 import { notificationsService } from './notifications.service.js'
 
 export default async function notificationsRoutes(fastify: FastifyInstance) {
@@ -35,4 +35,18 @@ export default async function notificationsRoutes(fastify: FastifyInstance) {
       return reply.status(204).send()
     },
   )
+
+  // POST /notifications/push-token — registra/atualiza o token Expo do device atual
+  fastify.post('/notifications/push-token', { preHandler: [authenticate] }, async (req, reply) => {
+    const body = RegisterPushTokenSchema.safeParse(req.body)
+    if (!body.success) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: body.error.issues,
+      })
+    }
+    await notificationsService.registerPushToken(req.user, body.data)
+    return reply.status(204).send()
+  })
 }

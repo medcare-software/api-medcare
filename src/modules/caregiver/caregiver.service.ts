@@ -4,6 +4,7 @@ import { env } from '../../config/env.js'
 import { assertFamilyInScope } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import { caregiverInviteCodeTemplate, sendMail } from '../../shared/mail/index.js'
+import { sendPushToUser } from '../../shared/push/index.js'
 import { hashForLookup } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { caregiverRepository } from './caregiver.repository.js'
@@ -37,6 +38,14 @@ export const caregiverService = {
       family.name,
     )
     await sendMail({ to: invite.email, ...template })
+
+    // Confirmação pra quem concedeu — aqui já se sabe o e-mail do destinatário
+    // (diferente do medical-access, que é anônimo até o resgate).
+    await sendPushToUser(user.id, {
+      title: 'Acesso concedido',
+      body: `Convite de cuidador enviado para ${invite.email}.`,
+      data: { type: 'caregiver-access-granted', inviteId: invite.id },
+    })
 
     return { id: invite.id, email: invite.email, expiresAt: invite.expiresAt }
   },

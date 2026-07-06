@@ -4,6 +4,11 @@ import {
   resolveDoctorId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import {
+  resolveFamilyAdminUserId,
+  resolveFamilyIdForMember,
+  sendPushToUser,
+} from '../../shared/push/index.js'
 import { decryptField, encryptField } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { diagnosticsRepository } from './diagnostics.repository.js'
@@ -43,6 +48,17 @@ export const diagnosticsService = {
       conductEncrypted: encryptField(input.conduct),
       diagnosedAt: input.diagnosedAt,
     })
+
+    const familyId = await resolveFamilyIdForMember(input.memberId)
+    const adminUserId = familyId ? await resolveFamilyAdminUserId(familyId) : null
+    if (adminUserId) {
+      await sendPushToUser(adminUserId, {
+        title: 'Novo prontuário recebido',
+        body: `Um médico enviou o prontuário "${diagnostic.title}".`,
+        data: { type: 'diagnostic-shared', diagnosticId: diagnostic.id, memberId: input.memberId },
+      })
+    }
+
     return toResponse(diagnostic)
   },
 

@@ -33,4 +33,14 @@ export const notificationsRepository = {
   deleteScoped(id: string, userId: string) {
     return db.notificationPreference.deleteMany({ where: { id, userId } })
   },
+
+  // upsert por token: o mesmo device pode trocar de conta (logout/login) sem deixar
+  // token órfão apontando pro usuário anterior.
+  upsertPushToken(userId: string, token: string, platform: string) {
+    return db.pushToken.upsert({
+      where: { token },
+      create: { userId, token, platform },
+      update: { userId, platform },
+    })
+  },
 }

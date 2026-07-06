@@ -14,3 +14,10 @@ export const UpsertNotificationPreferenceSchema = z.object({
 })
 
 export type UpsertNotificationPreferenceInput = z.infer<typeof UpsertNotificationPreferenceSchema>
+
+export const RegisterPushTokenSchema = z.object({
+  token: z.string().min(1, { message: 'Token é obrigatório' }),
+  platform: z.enum(['ios', 'android']),
+})
+
+export type RegisterPushTokenInput = z.infer<typeof RegisterPushTokenSchema>

@@ -152,6 +152,7 @@ model User {
   auditLogs           AuditLog[]
   notificationPrefs   NotificationPreference[]
   passwordResetTokens PasswordResetToken[]
+  pushTokens          PushToken[]
 
   @@index([role])
   @@index([status])
@@ -275,6 +276,7 @@ model Medication {
   startDate           DateTime
   endDate             DateTime?
   stockQuantity       Int?
+  lowStockNotifiedAt  DateTime? // evita reenviar push de estoque baixo a cada dose registrada
   prescriptionFileId  String? // referência a objeto no storage (MinIO)
   deactivationReason  String?
   active              Boolean        @default(true)
@@ -407,6 +409,7 @@ model MedicalAccessGrant {
   expiresAt DateTime?
   grantedAt DateTime?
   revokedAt DateTime?
+  notifiedExpiringAt DateTime? // evita reenviar push de "expirando" todo dia
   createdAt DateTime       @default(now())
 
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -450,6 +453,7 @@ model CaregiverInvite {
   expiresAt  DateTime
   redeemedAt DateTime?
   revokedAt  DateTime?
+  notifiedExpiringAt DateTime? // evita reenviar push de "expirando" todo dia
   createdAt  DateTime     @default(now())
 
   family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
@@ -633,6 +637,20 @@ model NotificationPreference {
 
   @@unique([userId, channel, category])
   @@map("notification_preferences")
+}
+
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String // "ios" | "android"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }
 
 // ─────────────────────────────────────────────

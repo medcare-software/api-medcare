@@ -8,6 +8,8 @@ import {
   resolveDoctorId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import { db } from '../../config/database.js'
+import { sendPushToUser } from '../../shared/push/index.js'
 import { hashForLookup } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { medicalAccessRepository } from './medical-access.repository.js'
@@ -26,6 +28,19 @@ export const medicalAccessService = {
       codeHash,
       validity: input.validity,
       expiresAt,
+    })
+
+    // Confirmação pra quem concedeu — o model é anônimo até o resgate (o código ainda
+    // não tem um médico/cuidador associado), então o conteúdo referencia o membro, não
+    // "quem recebeu" (isso só se sabe depois que o código for resgatado).
+    const member = await db.familyMember.findUnique({
+      where: { id: input.memberId },
+      select: { displayName: true },
+    })
+    await sendPushToUser(user.id, {
+      title: 'Acesso concedido',
+      body: `Código de acesso gerado para ${member?.displayName ?? 'um membro da família'}.`,
+      data: { type: 'medical-access-granted', grantId: grant.id },
     })
 
     // Código em texto plano só existe nesta resposta — nunca é persistido (só codeHash acima).

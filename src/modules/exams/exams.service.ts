@@ -6,6 +6,11 @@ import {
   resolveAccessibleMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import {
+  resolveFamilyAdminUserId,
+  resolveFamilyIdForMember,
+  sendPushToUser,
+} from '../../shared/push/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { examsRepository } from './exams.repository.js'
 import type { CreateExamInput, UpdateExamInput } from './exams.schema.js'
@@ -25,7 +30,23 @@ export const examsService = {
     // Exame registrado pelo médico é sempre marcado como origem DOCTOR,
     // independente do que o client tenha enviado.
     const source = user.role === 'DOCTOR' ? 'DOCTOR' : data.source
-    return examsRepository.create(memberId, { ...data, source })
+    const exam = await examsRepository.create(memberId, { ...data, source })
+
+    // CAREGIVER conta como papel de família aqui (ver isFamilyRole) — só DOCTOR é
+    // um terceiro de verdade "enviando" algo pra família.
+    if (user.role === 'DOCTOR') {
+      const familyId = await resolveFamilyIdForMember(memberId)
+      const adminUserId = familyId ? await resolveFamilyAdminUserId(familyId) : null
+      if (adminUserId) {
+        await sendPushToUser(adminUserId, {
+          title: 'Novo exame recebido',
+          body: `Um médico enviou o exame "${exam.name}".`,
+          data: { type: 'exam-shared', examId: exam.id, memberId },
+        })
+      }
+    }
+
+    return exam
   },
 
   async update(user: AuthUser, id: string, input: UpdateExamInput) {

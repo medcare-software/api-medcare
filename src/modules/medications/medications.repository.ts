@@ -42,6 +42,22 @@ export const medicationsRepository = {
     })
   },
 
+  // Chamado só internamente ao registrar dose TAKEN — não passa pelo UpdateMedicationInput
+  // público de propósito (lowStockNotifiedAt não é um campo editável pelo cliente).
+  decrementStock(id: string, newStockQuantity: number, markNotified: boolean) {
+    return db.medication.update({
+      where: { id },
+      data: {
+        stockQuantity: newStockQuantity,
+        ...(markNotified && { lowStockNotifiedAt: new Date() }),
+      },
+    })
+  },
+
+  resetLowStockNotification(id: string) {
+    return db.medication.update({ where: { id }, data: { lowStockNotifiedAt: null } })
+  },
+
   createDoseRecord(medicationId: string, input: RecordDoseInput & { recordedById: string }) {
     return db.medicationDoseRecord.create({ data: { medicationId, ...omitUndefined(input) } })
   },
