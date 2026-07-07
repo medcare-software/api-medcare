@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { optionalDate, requiredDate } from '../../shared/utils/zod-date'
+import { optionalDate, requiredDate } from '../../shared/utils/zod-date.js'
 
 const VaccineStatusEnum = z.enum(['UP_TO_DATE', 'BOOSTER_DUE'])
 

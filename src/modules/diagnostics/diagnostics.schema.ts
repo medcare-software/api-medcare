@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { optionalDate, requiredDate } from '../../shared/utils/zod-date'
+import { optionalDate, requiredDate } from '../../shared/utils/zod-date.js'
 
 export const CreateDiagnosticSchema = z.object({
   memberId: z.string().min(1, { message: 'Selecione um membro da família' }),

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { requiredDate } from '../../shared/utils/zod-date'
+import { requiredDate } from '../../shared/utils/zod-date.js'
 
 const BiologicalSexEnum = z.enum(['MALE', 'FEMALE'])
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { optionalDate, requiredDate } from '../../shared/utils/zod-date'
+import { optionalDate, requiredDate } from '../../shared/utils/zod-date.js'
 
 const MedicationFormEnum = z.enum([
   'TABLET',
