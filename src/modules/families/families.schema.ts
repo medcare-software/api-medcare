@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { requiredDate } from '../../shared/utils/zod-date'
 
 const BiologicalSexEnum = z.enum(['MALE', 'FEMALE'])
 
@@ -10,7 +11,7 @@ export const RegisterSchema = z.object({
   cpf: z.string().min(11, 'CPF inválido'),
   fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
   displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
-  birthDate: z.coerce.date(),
+  birthDate: requiredDate('Data de nascimento inválida'),
   biologicalSex: BiologicalSexEnum.optional(),
 })
 
@@ -18,20 +19,22 @@ export const CreateFamilyMemberSchema = z.object({
   fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
   displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
   relationship: z.string().min(1, { message: 'Parentesco é obrigatório' }),
-  birthDate: z.coerce.date(),
+  birthDate: requiredDate('Data de nascimento inválida'),
   biologicalSex: BiologicalSexEnum.optional(),
   cpf: z.string().min(11, { message: 'CPF inválido' }).optional(),
 })
 
-export const UpdateFamilyMemberSchema = CreateFamilyMemberSchema.partial()
+export const UpdateFamilyMemberSchema = CreateFamilyMemberSchema.partial().extend({
+  isAdmin: z.boolean().optional(),
+})
 
 export const UpsertHealthProfileSchema = z.object({
-  weightKg: z.number().positive().optional(),
-  heightM: z.number().positive().optional(),
-  bloodType: z.string().min(1).optional(),
+  weightKg: z.number().positive({ message: 'Peso deve ser um número positivo' }).optional(),
+  heightM: z.number().positive({ message: 'Altura deve ser um número positivo' }).optional(),
+  bloodType: z.string().min(1, { message: 'Tipo sanguíneo é obrigatório' }).optional(),
   conditions: z.array(z.string()).default([]),
   allergies: z.array(z.string()).default([]),
-  notes: z.string().min(1).optional(),
+  notes: z.string().min(1, { message: 'Observação não pode ser vazia' }).optional(),
 })
 
 export type RegisterInput = z.infer<typeof RegisterSchema>

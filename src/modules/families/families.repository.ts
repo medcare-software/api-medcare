@@ -25,7 +25,7 @@ type CreateFamilyMemberData = {
   cpfHash?: string
 }
 
-type UpdateFamilyMemberData = Partial<CreateFamilyMemberData>
+type UpdateFamilyMemberData = Partial<CreateFamilyMemberData> & { isAdmin?: boolean }
 
 type UpsertHealthProfileData = {
   weightKg?: number
@@ -96,6 +96,10 @@ export const familiesRepository = {
       where: { familyId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
     })
+  },
+
+  countAdmins(familyId: string) {
+    return db.familyMember.count({ where: { familyId, isAdmin: true, deletedAt: null } })
   },
 
   // familyIds vem de resolveAccessibleFamilyIds — escopa a busca por família

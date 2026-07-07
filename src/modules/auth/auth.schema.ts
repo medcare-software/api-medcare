@@ -6,6 +6,13 @@ const EmailLoginSchema = z.object({
   password: z.string().min(1, { message: 'Senha é obrigatória' }),
 })
 
+// Login por CPF ou e-mail num único campo — app-medcare (paciente/família/cuidador).
+// Mantido separado de EmailLoginSchema (que outros clientes ainda podem enviar).
+const IdentifierLoginSchema = z.object({
+  identifier: z.string().min(1, { message: 'Informe seu CPF ou e-mail' }),
+  password: z.string().min(1, { message: 'Senha é obrigatória' }),
+})
+
 // Login por CRM — médico (web-medcare)
 const CrmLoginSchema = z.object({
   crmNumber: z.string().min(1, { message: 'CRM é obrigatório' }),
@@ -13,14 +20,14 @@ const CrmLoginSchema = z.object({
   password: z.string().min(1, { message: 'Senha é obrigatória' }),
 })
 
-export const LoginSchema = z.union([EmailLoginSchema, CrmLoginSchema])
+export const LoginSchema = z.union([IdentifierLoginSchema, EmailLoginSchema, CrmLoginSchema])
 
 export const RefreshSchema = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().min(1, { message: 'Sessão inválida, faça login novamente' }),
 })
 
 export const LogoutSchema = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().min(1, { message: 'Sessão inválida, faça login novamente' }),
 })
 
 export const ForgotPasswordSchema = z.object({
@@ -33,11 +40,12 @@ export const VerifyResetCodeSchema = z.object({
 })
 
 export const ResetPasswordSchema = z.object({
-  resetSessionToken: z.string().min(1),
+  resetSessionToken: z.string().min(1, { message: 'Sessão de recuperação inválida ou expirada' }),
   newPassword: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
 })
 
 export type EmailLoginInput = z.infer<typeof EmailLoginSchema>
+export type IdentifierLoginInput = z.infer<typeof IdentifierLoginSchema>
 export type CrmLoginInput = z.infer<typeof CrmLoginSchema>
 export type LoginInput = z.infer<typeof LoginSchema>
 export type RefreshInput = z.infer<typeof RefreshSchema>

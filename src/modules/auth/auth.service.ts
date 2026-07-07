@@ -6,11 +6,11 @@ import type { FastifyInstance } from 'fastify'
 import { env } from '../../config/env.js'
 import { AppError } from '../../shared/errors/index.js'
 import { passwordResetCodeTemplate, sendMail } from '../../shared/mail/index.js'
-import { hashForLookup } from '../../shared/security/index.js'
+import { hashForLookup, onlyDigits } from '../../shared/security/index.js'
 import type { PasswordResetSessionPayload } from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
 import { authRepository } from './auth.repository.js'
-import type { CrmLoginInput, EmailLoginInput } from './auth.schema.js'
+import type { CrmLoginInput, EmailLoginInput, IdentifierLoginInput } from './auth.schema.js'
 
 const MAX_RESET_CODE_ATTEMPTS = 5
 
@@ -19,6 +19,15 @@ export const authService = {
 
   async validateEmailLogin(input: EmailLoginInput) {
     const user = await authRepository.findUserByEmail(input.email)
+    return assertCredentials(user, input.password)
+  },
+
+  // app-medcare — um único campo aceita CPF ou e-mail; decide pelo formato do valor.
+  async validateIdentifierLogin(input: IdentifierLoginInput) {
+    const isEmail = input.identifier.includes('@')
+    const user = isEmail
+      ? await authRepository.findUserByEmail(input.identifier)
+      : await authRepository.findUserByCpfHash(hashForLookup(onlyDigits(input.identifier)))
     return assertCredentials(user, input.password)
   },
 

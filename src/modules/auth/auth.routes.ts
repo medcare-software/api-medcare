@@ -27,9 +27,11 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
 
     const user =
-      'email' in body.data
-        ? await authService.validateEmailLogin(body.data)
-        : await authService.validateCrmLogin(body.data)
+      'identifier' in body.data
+        ? await authService.validateIdentifierLogin(body.data)
+        : 'email' in body.data
+          ? await authService.validateEmailLogin(body.data)
+          : await authService.validateCrmLogin(body.data)
 
     const tokens = await issueTokens(fastify, { id: user.id, role: user.role })
 

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { optionalDate, requiredDate } from '../../shared/utils/zod-date'
 
 const MedicationFormEnum = z.enum([
   'TABLET',
@@ -22,12 +23,16 @@ const BaseMedicationSchema = z.object({
   frequency: z.string().min(1, { message: 'Frequência é obrigatória' }),
   scheduleTimes: z.array(z.string()).default([]),
   weekDays: z.array(z.string()).default([]),
-  specialInstructions: z.string().min(1).optional(),
+  specialInstructions: z.string().min(1, { message: 'Instrução especial não pode ser vazia' }).optional(),
   continuousUse: z.boolean().default(true),
-  startDate: z.coerce.date(),
-  endDate: z.coerce.date().optional(),
-  stockQuantity: z.number().int().nonnegative().optional(),
-  prescriptionFileId: z.string().min(1).optional(),
+  startDate: requiredDate('Data de início inválida'),
+  endDate: optionalDate('Data de término inválida'),
+  stockQuantity: z
+    .number()
+    .int()
+    .nonnegative({ message: 'Quantidade em estoque deve ser zero ou maior' })
+    .optional(),
+  prescriptionFileId: z.string().min(1, { message: 'Receita inválida' }).optional(),
 })
 
 function endDateNotBeforeStartDate(data: { startDate?: Date | undefined; endDate?: Date | undefined }) {
@@ -49,7 +54,7 @@ export const UpdateMedicationSchema = BaseMedicationSchema.omit({ memberId: true
   .refine(endDateNotBeforeStartDate, dateRangeRefinement)
 
 export const ListMedicationsQuerySchema = z.object({
-  memberId: z.string().min(1),
+  memberId: z.string().min(1, { message: 'Selecione um membro da família' }),
   active: z
     .enum(['true', 'false'])
     .optional()
@@ -57,8 +62,8 @@ export const ListMedicationsQuerySchema = z.object({
 })
 
 export const RecordDoseSchema = z.object({
-  scheduledAt: z.coerce.date(),
-  takenAt: z.coerce.date().optional(),
+  scheduledAt: requiredDate('Data/hora agendada inválida'),
+  takenAt: optionalDate('Data/hora da dose inválida'),
   state: DoseStateEnum,
 })
 

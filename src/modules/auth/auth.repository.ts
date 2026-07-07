@@ -15,6 +15,13 @@ export const authRepository = {
     })
   },
 
+  async findUserByCpfHash(cpfHash: string) {
+    return db.user.findFirst({
+      where: { cpfHash, deletedAt: null },
+      include: { doctor: true },
+    })
+  },
+
   async findUserById(id: string) {
     return db.user.findFirst({
       where: { id, deletedAt: null },

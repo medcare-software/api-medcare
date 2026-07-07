@@ -10,7 +10,12 @@ export const UpsertNotificationPreferenceSchema = z.object({
   channel: NotificationChannelEnum,
   category: NotificationCategoryEnum,
   enabled: z.boolean().default(true),
-  reminderMinutesBefore: z.number().int().nonnegative().nullable().optional(),
+  reminderMinutesBefore: z
+    .number()
+    .int()
+    .nonnegative({ message: 'Minutos de antecedência deve ser zero ou maior' })
+    .nullable()
+    .optional(),
 })
 
 export type UpsertNotificationPreferenceInput = z.infer<typeof UpsertNotificationPreferenceSchema>

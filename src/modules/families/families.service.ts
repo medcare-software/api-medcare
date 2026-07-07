@@ -90,8 +90,20 @@ export const familiesService = {
 
   async updateMember(user: AuthUser, id: string, input: UpdateFamilyMemberInput) {
     assertFamilyWriter(user)
-    await getScopedOrThrow(user, id)
+    const member = await getScopedOrThrow(user, id)
     const cpfFields = await resolveCpfFields(input.cpf, id)
+
+    // Rebaixar o único administrador restante deixaria a família sem ninguém com
+    // permissão de escrita — mesma proteção já existente pra exclusão de membro.
+    if (input.isAdmin === false && member.isAdmin) {
+      const adminCount = await familiesRepository.countAdmins(member.familyId)
+      if (adminCount <= 1) {
+        throw new AppError({
+          code: 'CONFLICT',
+          message: 'Não é possível remover o último administrador da família',
+        })
+      }
+    }
 
     const updated = await familiesRepository.updateMember(id, {
       ...(input.fullName !== undefined && { fullNameEncrypted: encryptField(input.fullName) }),
@@ -99,6 +111,7 @@ export const familiesService = {
       ...(input.relationship !== undefined && { relationship: input.relationship }),
       ...(input.birthDate !== undefined && { birthDate: input.birthDate }),
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
+      ...(input.isAdmin !== undefined && { isAdmin: input.isAdmin }),
       ...cpfFields,
     })
     return toMemberDetail(updated, user.role)
