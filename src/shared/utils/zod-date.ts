@@ -19,18 +19,37 @@ function isValidCalendarDate(v: string): boolean {
   )
 }
 
-/** `z.coerce.date()` com mensagem PT-BR — a coerção padrão do Zod gera "Invalid date" em inglês. */
-export function requiredDate(message: string) {
-  return z
-    .string()
-    .refine(isValidCalendarDate, { message })
-    .transform((v) => new Date(v))
+function isNotFuture(v: string): boolean {
+  return new Date(v).getTime() <= Date.now()
 }
 
-export function optionalDate(message: string) {
-  return z
+export type DateSchemaOptions = {
+  /** Rejeita datas futuras (ex.: data de nascimento) — usa `futureMessage` no erro. */
+  notFuture?: boolean
+  futureMessage?: string
+}
+
+/** `z.coerce.date()` com mensagem PT-BR — a coerção padrão do Zod gera "Invalid date" em inglês. */
+export function requiredDate(message: string, options?: DateSchemaOptions) {
+  let schema: z.ZodType<string, z.ZodTypeDef, string> = z
     .string()
     .refine(isValidCalendarDate, { message })
-    .transform((v) => new Date(v))
-    .optional()
+  if (options?.notFuture) {
+    schema = schema.refine(isNotFuture, {
+      message: options.futureMessage ?? 'Data não pode ser no futuro',
+    })
+  }
+  return schema.transform((v) => new Date(v))
+}
+
+export function optionalDate(message: string, options?: DateSchemaOptions) {
+  let schema: z.ZodType<string, z.ZodTypeDef, string> = z
+    .string()
+    .refine(isValidCalendarDate, { message })
+  if (options?.notFuture) {
+    schema = schema.refine(isNotFuture, {
+      message: options.futureMessage ?? 'Data não pode ser no futuro',
+    })
+  }
+  return schema.transform((v) => new Date(v)).optional()
 }
