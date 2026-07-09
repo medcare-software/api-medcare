@@ -1,6 +1,10 @@
-import { env } from '../../config/env.js'
 import { db } from '../../config/database.js'
-import { resolveFamilyAdminUserId, resolveFamilyIdForMember, sendPushToUser } from '../push/index.js'
+import { env } from '../../config/env.js'
+import {
+  resolveFamilyAdminUserIds,
+  resolveFamilyIdForMember,
+  sendPushToUser,
+} from '../push/index.js'
 
 /** Roda uma vez por dia (ver server.ts) — avisa a admin da família quando um acesso
  * concedido (médico/clínica ou cuidador) está perto de expirar. `notifiedExpiringAt`
@@ -18,8 +22,8 @@ export async function checkExpiringAccessJob(): Promise<void> {
   })
   for (const grant of grants) {
     const familyId = await resolveFamilyIdForMember(grant.memberId)
-    const adminUserId = familyId ? await resolveFamilyAdminUserId(familyId) : null
-    if (adminUserId) {
+    const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
+    for (const adminUserId of adminUserIds) {
       await sendPushToUser(adminUserId, {
         title: 'Acesso médico expirando',
         body: 'Um acesso concedido a um profissional de saúde expira em breve.',
@@ -40,8 +44,8 @@ export async function checkExpiringAccessJob(): Promise<void> {
     },
   })
   for (const invite of invites) {
-    const adminUserId = await resolveFamilyAdminUserId(invite.familyId)
-    if (adminUserId) {
+    const adminUserIds = await resolveFamilyAdminUserIds(invite.familyId)
+    for (const adminUserId of adminUserIds) {
       await sendPushToUser(adminUserId, {
         title: 'Acesso de cuidador expirando',
         body: `O acesso de ${invite.email} expira em breve.`,

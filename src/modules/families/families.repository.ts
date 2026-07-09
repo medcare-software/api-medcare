@@ -1,4 +1,4 @@
-import type { BiologicalSex } from '@prisma/client'
+import type { BiologicalSex, Role } from '@prisma/client'
 
 import { db } from '../../config/database.js'
 import { omitUndefined } from '../../shared/utils/index.js'
@@ -176,6 +176,21 @@ export const familiesRepository = {
       where: { id },
       data: omitUndefined(data),
       include: { healthProfile: true },
+    })
+  },
+
+  // isAdmin (FamilyMember) e role (User) precisam mudar juntos pra promoção/rebaixamento
+  // de admin ter efeito real (poder de escrita vem de User.role, não de isAdmin) — ver
+  // families.service.ts:updateMember.
+  updateMemberAndRole(id: string, userId: string, data: UpdateFamilyMemberData, role: Role) {
+    return db.$transaction(async (tx) => {
+      const member = await tx.familyMember.update({
+        where: { id },
+        data: omitUndefined(data),
+        include: { healthProfile: true },
+      })
+      await tx.user.update({ where: { id: userId }, data: { role } })
+      return member
     })
   },
 

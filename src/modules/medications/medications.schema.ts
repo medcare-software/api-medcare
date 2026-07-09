@@ -14,16 +14,22 @@ const MedicationFormEnum = z.enum([
 
 const DoseStateEnum = z.enum(['TAKEN', 'LATE', 'MISSED'])
 
+const MedicationStripeColorEnum = z.enum(['BLACK', 'RED', 'ORANGE', 'NONE'])
+
 const BaseMedicationSchema = z.object({
   memberId: z.string().min(1, { message: 'Selecione um membro da família' }),
   name: z.string().min(1, { message: 'Nome do medicamento é obrigatório' }),
   dosage: z.string().min(1, { message: 'Dosagem é obrigatória' }),
   dosageUnit: z.string().min(1, { message: 'Unidade da dosagem é obrigatória' }),
   form: MedicationFormEnum,
+  stripeColor: MedicationStripeColorEnum,
   frequency: z.string().min(1, { message: 'Frequência é obrigatória' }),
   scheduleTimes: z.array(z.string()).default([]),
   weekDays: z.array(z.string()).default([]),
-  specialInstructions: z.string().min(1, { message: 'Instrução especial não pode ser vazia' }).optional(),
+  specialInstructions: z
+    .string()
+    .min(1, { message: 'Instrução especial não pode ser vazia' })
+    .optional(),
   continuousUse: z.boolean().default(true),
   startDate: requiredDate('Data de início inválida'),
   endDate: optionalDate('Data de término inválida'),
@@ -35,7 +41,10 @@ const BaseMedicationSchema = z.object({
   prescriptionFileId: z.string().min(1, { message: 'Receita inválida' }).optional(),
 })
 
-function endDateNotBeforeStartDate(data: { startDate?: Date | undefined; endDate?: Date | undefined }) {
+function endDateNotBeforeStartDate(data: {
+  startDate?: Date | undefined
+  endDate?: Date | undefined
+}) {
   return !data.endDate || !data.startDate || data.endDate >= data.startDate
 }
 

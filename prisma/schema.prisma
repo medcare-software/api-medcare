@@ -48,6 +48,13 @@ enum DoseState {
   MISSED
 }
 
+enum MedicationStripeColor {
+  BLACK
+  RED
+  ORANGE
+  NONE
+}
+
 enum VaccineStatus {
   UP_TO_DATE
   BOOSTER_DUE
@@ -262,26 +269,27 @@ model HealthProfile {
 // ─────────────────────────────────────────────
 
 model Medication {
-  id                  String         @id @default(cuid())
+  id                  String                @id @default(cuid())
   memberId            String
   name                String
   dosage              String
   dosageUnit          String
   form                MedicationForm
+  stripeColor         MedicationStripeColor @default(NONE)
   frequency           String
   scheduleTimes       String[] // ["08:00", "20:00"]
   weekDays            String[] // ["seg", "ter", ...] vazio = todos os dias
   specialInstructions String?
-  continuousUse       Boolean        @default(true)
+  continuousUse       Boolean               @default(true)
   startDate           DateTime
   endDate             DateTime?
   stockQuantity       Int?
   lowStockNotifiedAt  DateTime? // evita reenviar push de estoque baixo a cada dose registrada
   prescriptionFileId  String? // referência a objeto no storage (MinIO)
   deactivationReason  String?
-  active              Boolean        @default(true)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  active              Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
   member      FamilyMember           @relation(fields: [memberId], references: [id], onDelete: Cascade)
   doseRecords MedicationDoseRecord[]
@@ -399,18 +407,18 @@ model Procedure {
 // ─────────────────────────────────────────────
 
 model MedicalAccessGrant {
-  id        String         @id @default(cuid())
-  memberId  String
-  doctorId  String?
-  clinicId  String?
-  codeHash  String         @unique // código de 6-8 dígitos, nunca salvo em texto plano
-  status    AccessStatus   @default(PENDING)
-  validity  AccessValidity @default(TEMPORARY)
-  expiresAt DateTime?
-  grantedAt DateTime?
-  revokedAt DateTime?
+  id                 String         @id @default(cuid())
+  memberId           String
+  doctorId           String?
+  clinicId           String?
+  codeHash           String         @unique // código de 6-8 dígitos, nunca salvo em texto plano
+  status             AccessStatus   @default(PENDING)
+  validity           AccessValidity @default(TEMPORARY)
+  expiresAt          DateTime?
+  grantedAt          DateTime?
+  revokedAt          DateTime?
   notifiedExpiringAt DateTime? // evita reenviar push de "expirando" todo dia
-  createdAt DateTime       @default(now())
+  createdAt          DateTime       @default(now())
 
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
   doctor Doctor?      @relation(fields: [doctorId], references: [id], onDelete: SetNull)
@@ -445,16 +453,16 @@ model CaregiverAccess {
 // Mesmo padrão de segurança do PasswordResetToken/MedicalAccessGrant: só o hash
 // do código é persistido, nunca o texto plano.
 model CaregiverInvite {
-  id         String       @id @default(cuid())
-  familyId   String
-  email      String
-  codeHash   String       @unique
-  status     AccessStatus @default(PENDING)
-  expiresAt  DateTime
-  redeemedAt DateTime?
-  revokedAt  DateTime?
+  id                 String       @id @default(cuid())
+  familyId           String
+  email              String
+  codeHash           String       @unique
+  status             AccessStatus @default(PENDING)
+  expiresAt          DateTime
+  redeemedAt         DateTime?
+  revokedAt          DateTime?
   notifiedExpiringAt DateTime? // evita reenviar push de "expirando" todo dia
-  createdAt  DateTime     @default(now())
+  createdAt          DateTime     @default(now())
 
   family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
 

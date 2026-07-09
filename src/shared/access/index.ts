@@ -3,9 +3,12 @@ export {
   assertActiveMedicalAccessGrant,
   assertFamilyInScope,
   assertMemberInScope,
+  assertOwnScopedMemberInScope,
   isFamilyRole,
   resolveAccessibleFamilyIds,
   resolveAccessibleMemberIds,
   resolveClinicId,
   resolveDoctorId,
+  resolveOwnMemberId,
+  resolveOwnScopedMemberIds,
 } from './member-scope.js'

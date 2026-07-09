@@ -1,14 +1,14 @@
 import type { Role } from '@prisma/client'
 
+import { env } from '../../config/env.js'
 import {
   assertClinicalReadAccess,
-  assertMemberInScope,
-  resolveAccessibleMemberIds,
+  assertOwnScopedMemberInScope,
+  resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
-import { env } from '../../config/env.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
-  resolveFamilyAdminUserId,
+  resolveFamilyAdminUserIds,
   resolveFamilyIdForMember,
   sendPushToUser,
 } from '../../shared/push/index.js'
@@ -21,6 +21,9 @@ import type {
 } from './medications.schema.js'
 
 const FAMILY_WRITER_ROLES: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER']
+// Excluir medicação é uma ação administrativa — FAMILY_MEMBER fica de fora
+// (diferente de criar/editar/marcar dose, restritos ao próprio membro mas permitidos).
+const CLINICAL_DELETE_ROLES: Role[] = ['PATIENT_ADMIN', 'CAREGIVER']
 
 export const medicationsService = {
   async list(user: AuthUser, memberId: string, filters: { active?: boolean }) {
@@ -33,7 +36,7 @@ export const medicationsService = {
 
   async create(user: AuthUser, input: CreateMedicationInput) {
     assertFamilyWriter(user)
-    await assertMemberInScope(user, input.memberId)
+    await assertOwnScopedMemberInScope(user, input.memberId)
     const { memberId, ...data } = input
     return medicationsRepository.create(memberId, data)
   },
@@ -54,7 +57,7 @@ export const medicationsService = {
   },
 
   async deactivate(user: AuthUser, id: string, reason: string) {
-    assertFamilyWriter(user)
+    assertFamilyDeleter(user)
     const medication = await getScopedOrThrow(user, id)
     await medicationsRepository.deactivate(medication.id, reason)
   },
@@ -67,7 +70,11 @@ export const medicationsService = {
       recordedById: user.id,
     })
 
-    if (input.state === 'TAKEN' && medication.stockQuantity !== null && medication.stockQuantity > 0) {
+    if (
+      input.state === 'TAKEN' &&
+      medication.stockQuantity !== null &&
+      medication.stockQuantity > 0
+    ) {
       const newStock = medication.stockQuantity - 1
       const crossedThreshold =
         newStock <= env.MEDICATION_LOW_STOCK_THRESHOLD && !medication.lowStockNotifiedAt
@@ -75,8 +82,8 @@ export const medicationsService = {
 
       if (crossedThreshold) {
         const familyId = await resolveFamilyIdForMember(medication.memberId)
-        const adminUserId = familyId ? await resolveFamilyAdminUserId(familyId) : null
-        if (adminUserId) {
+        const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
+        for (const adminUserId of adminUserIds) {
           await sendPushToUser(adminUserId, {
             title: 'Estoque acabando',
             body: `${medication.name} está acabando (${newStock} restante${newStock === 1 ? '' : 's'}).`,
@@ -118,8 +125,14 @@ function assertFamilyWriter(user: AuthUser) {
   }
 }
 
+function assertFamilyDeleter(user: AuthUser) {
+  if (!CLINICAL_DELETE_ROLES.includes(user.role)) {
+    throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode excluir medicações' })
+  }
+}
+
 async function getScopedOrThrow(user: AuthUser, id: string) {
-  const memberIds = await resolveAccessibleMemberIds(user)
+  const memberIds = await resolveOwnScopedMemberIds(user)
   const medication = await medicationsRepository.findByIdScoped(id, memberIds)
   if (!medication) {
     throw new AppError({ code: 'NOT_FOUND', message: 'Medicação não encontrada' })

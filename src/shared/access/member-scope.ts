@@ -64,6 +64,43 @@ export async function assertMemberInScope(user: AuthUser, memberId: string): Pro
   }
 }
 
+/** FamilyMember.id do próprio usuário (PATIENT_ADMIN/FAMILY_MEMBER). null para CAREGIVER e demais roles. */
+export async function resolveOwnMemberId(user: AuthUser): Promise<string | null> {
+  if (user.role !== 'PATIENT_ADMIN' && user.role !== 'FAMILY_MEMBER') {
+    return null
+  }
+  const member = await db.familyMember.findUnique({
+    where: { userId: user.id },
+    select: { id: true },
+  })
+  return member?.id ?? null
+}
+
+/**
+ * Como resolveAccessibleMemberIds, mas FAMILY_MEMBER resolve só para o próprio
+ * member — não a família inteira. PATIENT_ADMIN e CAREGIVER mantêm o comportamento
+ * atual (família toda). Usada pelos módulos clínicos e por families para restringir
+ * leitura/escrita do membro comum ao próprio registro.
+ */
+export async function resolveOwnScopedMemberIds(user: AuthUser): Promise<string[]> {
+  if (user.role === 'FAMILY_MEMBER') {
+    const ownId = await resolveOwnMemberId(user)
+    return ownId ? [ownId] : []
+  }
+  return resolveAccessibleMemberIds(user)
+}
+
+/** Lança NOT_FOUND (nunca FORBIDDEN) — versão own-scoped de assertMemberInScope. */
+export async function assertOwnScopedMemberInScope(
+  user: AuthUser,
+  memberId: string,
+): Promise<void> {
+  const memberIds = await resolveOwnScopedMemberIds(user)
+  if (!memberIds.includes(memberId)) {
+    throw new AppError({ code: 'NOT_FOUND', message: 'Registro não encontrado' })
+  }
+}
+
 /** Lança NOT_FOUND (nunca FORBIDDEN) para não vazar a existência de família de terceiros. */
 export async function assertFamilyInScope(user: AuthUser, familyId: string): Promise<void> {
   const familyIds = await resolveAccessibleFamilyIds(user)

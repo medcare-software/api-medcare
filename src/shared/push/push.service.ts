@@ -35,12 +35,14 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
   }
 }
 
-export async function resolveFamilyAdminUserId(familyId: string): Promise<string | null> {
-  const admin = await db.familyMember.findFirst({
+// Retorna todos os admins (>1 é comum desde que promover/rebaixar sincroniza
+// User.role — ver families.service.ts:updateMember), não só o primeiro.
+export async function resolveFamilyAdminUserIds(familyId: string): Promise<string[]> {
+  const admins = await db.familyMember.findMany({
     where: { familyId, isAdmin: true },
     select: { userId: true },
   })
-  return admin?.userId ?? null
+  return admins.map((a) => a.userId).filter((id): id is string => id !== null)
 }
 
 export async function resolveFamilyIdForMember(memberId: string): Promise<string | null> {
@@ -49,4 +51,13 @@ export async function resolveFamilyIdForMember(memberId: string): Promise<string
     select: { familyId: true },
   })
   return member?.familyId ?? null
+}
+
+/** userId do FamilyMember, se ele tiver login próprio (null para dependente sem login). */
+export async function resolveMemberUserId(memberId: string): Promise<string | null> {
+  const member = await db.familyMember.findUnique({
+    where: { id: memberId },
+    select: { userId: true },
+  })
+  return member?.userId ?? null
 }

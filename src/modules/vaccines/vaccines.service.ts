@@ -2,8 +2,8 @@ import type { Role } from '@prisma/client'
 
 import {
   assertClinicalReadAccess,
-  assertMemberInScope,
-  resolveAccessibleMemberIds,
+  assertOwnScopedMemberInScope,
+  resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
@@ -15,6 +15,8 @@ import type {
 } from './vaccines.schema.js'
 
 const FAMILY_WRITER_ROLES: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER']
+// Excluir vacina é ação administrativa (remoção definitiva) — FAMILY_MEMBER fica de fora.
+const CLINICAL_DELETE_ROLES: Role[] = ['PATIENT_ADMIN', 'CAREGIVER']
 
 export const vaccinesService = {
   async list(user: AuthUser, memberId: string) {
@@ -27,7 +29,7 @@ export const vaccinesService = {
 
   async create(user: AuthUser, input: CreateVaccineInput) {
     assertFamilyWriter(user)
-    await assertMemberInScope(user, input.memberId)
+    await assertOwnScopedMemberInScope(user, input.memberId)
     const { memberId, ...data } = input
     return vaccinesRepository.create(memberId, data)
   },
@@ -39,7 +41,7 @@ export const vaccinesService = {
   },
 
   async remove(user: AuthUser, id: string) {
-    assertFamilyWriter(user)
+    assertFamilyDeleter(user)
     const vaccine = await getScopedOrThrow(user, id)
     // Vaccine não tem soft-delete nem campo `active` no schema — remoção é definitiva
     // e cascateia para VaccineDose (onDelete: Cascade).
@@ -68,8 +70,14 @@ function assertFamilyWriter(user: AuthUser) {
   }
 }
 
+function assertFamilyDeleter(user: AuthUser) {
+  if (!CLINICAL_DELETE_ROLES.includes(user.role)) {
+    throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode excluir vacinas' })
+  }
+}
+
 async function getScopedOrThrow(user: AuthUser, id: string) {
-  const memberIds = await resolveAccessibleMemberIds(user)
+  const memberIds = await resolveOwnScopedMemberIds(user)
   const vaccine = await vaccinesRepository.findByIdScoped(id, memberIds)
   if (!vaccine) {
     throw new AppError({ code: 'NOT_FOUND', message: 'Vacina não encontrada' })

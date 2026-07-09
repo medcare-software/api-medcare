@@ -5,6 +5,7 @@ import { CreateExamSchema, ListExamsQuerySchema, UpdateExamSchema } from './exam
 import { examsService } from './exams.service.js'
 
 const EXAM_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER', 'DOCTOR'] as const
+const EXAM_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER', 'DOCTOR'] as const
 
 export default async function examsRoutes(fastify: FastifyInstance) {
   // GET /exams?memberId=
@@ -61,7 +62,7 @@ export default async function examsRoutes(fastify: FastifyInstance) {
   // DELETE /exams/:id
   fastify.delete(
     '/exams/:id',
-    { preHandler: [authenticate, authorize(...EXAM_WRITERS)] },
+    { preHandler: [authenticate, authorize(...EXAM_DELETERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       await examsService.remove(req.user, id)

@@ -10,10 +10,17 @@ import {
 } from './families.schema.js'
 import { familiesService } from './families.service.js'
 
+// Roster inteiro da família — FAMILY_MEMBER fica de fora (o service não restringe
+// por member nessa listagem, incluí-lo aqui vazaria dados de outros membros).
 const FAMILY_READERS = ['PATIENT_ADMIN', 'CAREGIVER'] as const
-// PATIENT_ADMIN é o único papel do app-medcare com escrita em FamilyMember/HealthProfile
-// (ver plano de arquitetura, seção 3.4) — CAREGIVER só lê.
+// Um único membro — FAMILY_MEMBER pode buscar (o service restringe ao próprio via
+// getScopedOrThrow), necessário para ele conseguir carregar o próprio perfil.
+const FAMILY_MEMBER_READERS = ['PATIENT_ADMIN', 'CAREGIVER', 'FAMILY_MEMBER'] as const
+// PATIENT_ADMIN gerencia (cria/exclui) qualquer membro da família — CAREGIVER só lê.
 const FAMILY_WRITERS = ['PATIENT_ADMIN'] as const
+// Editar perfil (nome/nascimento/saúde) — FAMILY_MEMBER pode, restrito ao próprio
+// registro (o service restringe via getScopedOrThrow).
+const FAMILY_PROFILE_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER'] as const
 
 export default async function familiesRoutes(fastify: FastifyInstance) {
   // POST /auth/register — admin familiar cria a própria conta + a família
@@ -72,7 +79,7 @@ export default async function familiesRoutes(fastify: FastifyInstance) {
   // GET /family-members/:id
   fastify.get(
     '/family-members/:id',
-    { preHandler: [authenticate, authorize(...FAMILY_READERS)] },
+    { preHandler: [authenticate, authorize(...FAMILY_MEMBER_READERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const member = await familiesService.getMember(req.user, id)
@@ -80,10 +87,10 @@ export default async function familiesRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // PATCH /family-members/:id — só PATIENT_ADMIN
+  // PATCH /family-members/:id — PATIENT_ADMIN edita qualquer membro; FAMILY_MEMBER só o próprio
   fastify.patch(
     '/family-members/:id',
-    { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
+    { preHandler: [authenticate, authorize(...FAMILY_PROFILE_WRITERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const body = UpdateFamilyMemberSchema.safeParse(req.body)
@@ -99,10 +106,10 @@ export default async function familiesRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // PUT /family-members/:id/health-profile — só PATIENT_ADMIN, upsert
+  // PUT /family-members/:id/health-profile — PATIENT_ADMIN qualquer membro; FAMILY_MEMBER só o próprio
   fastify.put(
     '/family-members/:id/health-profile',
-    { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
+    { preHandler: [authenticate, authorize(...FAMILY_PROFILE_WRITERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const body = UpsertHealthProfileSchema.safeParse(req.body)

@@ -5,7 +5,7 @@ import {
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
-  resolveFamilyAdminUserId,
+  resolveFamilyAdminUserIds,
   resolveFamilyIdForMember,
   sendPushToUser,
 } from '../../shared/push/index.js'
@@ -50,8 +50,8 @@ export const diagnosticsService = {
     })
 
     const familyId = await resolveFamilyIdForMember(input.memberId)
-    const adminUserId = familyId ? await resolveFamilyAdminUserId(familyId) : null
-    if (adminUserId) {
+    const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
+    for (const adminUserId of adminUserIds) {
       await sendPushToUser(adminUserId, {
         title: 'Novo prontuário recebido',
         body: `Um médico enviou o prontuário "${diagnostic.title}".`,
@@ -104,7 +104,9 @@ function toResponse(diagnostic: {
     id: diagnostic.id,
     memberId: diagnostic.memberId,
     doctorId: diagnostic.doctorId,
-    doctorCrm: diagnostic.doctor ? `${diagnostic.doctor.crmNumber}/${diagnostic.doctor.crmState}` : null,
+    doctorCrm: diagnostic.doctor
+      ? `${diagnostic.doctor.crmNumber}/${diagnostic.doctor.crmState}`
+      : null,
     title: diagnostic.title,
     description: decryptField(diagnostic.descriptionEncrypted),
     conduct: decryptField(diagnostic.conductEncrypted),

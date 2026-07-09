@@ -10,6 +10,7 @@ import {
 import { vaccinesService } from './vaccines.service.js'
 
 const FAMILY_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'] as const
+const VACCINE_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER'] as const
 
 export default async function vaccinesRoutes(fastify: FastifyInstance) {
   // GET /vaccines?memberId=
@@ -66,7 +67,7 @@ export default async function vaccinesRoutes(fastify: FastifyInstance) {
   // DELETE /vaccines/:id — remoção definitiva (sem soft-delete no schema)
   fastify.delete(
     '/vaccines/:id',
-    { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
+    { preHandler: [authenticate, authorize(...VACCINE_DELETERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       await vaccinesService.remove(req.user, id)

@@ -1,14 +1,15 @@
 import {
   assertActiveMedicalAccessGrant,
   assertClinicalReadAccess,
-  assertMemberInScope,
+  assertOwnScopedMemberInScope,
   isFamilyRole,
-  resolveAccessibleMemberIds,
+  resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
-  resolveFamilyAdminUserId,
+  resolveFamilyAdminUserIds,
   resolveFamilyIdForMember,
+  resolveMemberUserId,
   sendPushToUser,
 } from '../../shared/push/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
@@ -36,12 +37,23 @@ export const examsService = {
     // um terceiro de verdade "enviando" algo pra família.
     if (user.role === 'DOCTOR') {
       const familyId = await resolveFamilyIdForMember(memberId)
-      const adminUserId = familyId ? await resolveFamilyAdminUserId(familyId) : null
-      if (adminUserId) {
+      const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
+      for (const adminUserId of adminUserIds) {
         await sendPushToUser(adminUserId, {
           title: 'Novo exame recebido',
           body: `Um médico enviou o exame "${exam.name}".`,
           data: { type: 'exam-shared', examId: exam.id, memberId },
+        })
+      }
+    } else if (isFamilyRole(user.role)) {
+      // Avisa o dono do exame quando ele tem login próprio (FAMILY_MEMBER) e não foi
+      // ele mesmo quem cadastrou — dependente sem login (userId null) não recebe nada.
+      const ownerUserId = await resolveMemberUserId(memberId)
+      if (ownerUserId && ownerUserId !== user.id) {
+        await sendPushToUser(ownerUserId, {
+          title: 'Novo exame cadastrado',
+          body: `Um novo exame "${exam.name}" foi cadastrado para você.`,
+          data: { type: 'exam-added', examId: exam.id, memberId },
         })
       }
     }
@@ -50,12 +62,12 @@ export const examsService = {
   },
 
   async update(user: AuthUser, id: string, input: UpdateExamInput) {
-    const exam = await getScopedForWrite(user, id)
+    const exam = await getScopedForUpdate(user, id)
     return examsRepository.update(exam.id, input)
   },
 
   async remove(user: AuthUser, id: string) {
-    const exam = await getScopedForWrite(user, id)
+    const exam = await getScopedForDelete(user, id)
     await examsRepository.delete(exam.id)
   },
 }
@@ -63,7 +75,7 @@ export const examsService = {
 // Escritores: família (via escopo) ou DOCTOR com grant ativo. CLINIC_ADMIN só lê.
 async function assertExamWriteAccess(user: AuthUser, memberId: string) {
   if (isFamilyRole(user.role)) {
-    await assertMemberInScope(user, memberId)
+    await assertOwnScopedMemberInScope(user, memberId)
     return
   }
   if (user.role === 'DOCTOR') {
@@ -73,9 +85,10 @@ async function assertExamWriteAccess(user: AuthUser, memberId: string) {
   throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode registrar exames' })
 }
 
-async function getScopedForWrite(user: AuthUser, id: string) {
+// Editar exame: FAMILY_MEMBER pode, restrito ao próprio membro (ver resolveOwnScopedMemberIds).
+async function getScopedForUpdate(user: AuthUser, id: string) {
   if (isFamilyRole(user.role)) {
-    const memberIds = await resolveAccessibleMemberIds(user)
+    const memberIds = await resolveOwnScopedMemberIds(user)
     const exam = await examsRepository.findByIdScoped(id, memberIds)
     if (!exam) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Exame não encontrado' })
@@ -93,4 +106,31 @@ async function getScopedForWrite(user: AuthUser, id: string) {
   }
 
   throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode alterar exames' })
+}
+
+// Excluir exame: ação administrativa — FAMILY_MEMBER nunca pode, nem o próprio.
+async function getScopedForDelete(user: AuthUser, id: string) {
+  if (user.role === 'FAMILY_MEMBER') {
+    throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode excluir exames' })
+  }
+
+  if (isFamilyRole(user.role)) {
+    const memberIds = await resolveOwnScopedMemberIds(user)
+    const exam = await examsRepository.findByIdScoped(id, memberIds)
+    if (!exam) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Exame não encontrado' })
+    }
+    return exam
+  }
+
+  if (user.role === 'DOCTOR') {
+    const exam = await examsRepository.findById(id)
+    if (!exam) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Exame não encontrado' })
+    }
+    await assertActiveMedicalAccessGrant({ user, memberId: exam.memberId })
+    return exam
+  }
+
+  throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode excluir exames' })
 }

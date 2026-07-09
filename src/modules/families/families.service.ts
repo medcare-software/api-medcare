@@ -5,9 +5,14 @@ import bcrypt from 'bcryptjs'
 import type { FastifyInstance } from 'fastify'
 
 import { env } from '../../config/env.js'
-import { assertFamilyInScope, resolveAccessibleFamilyIds } from '../../shared/access/index.js'
+import {
+  assertFamilyInScope,
+  resolveAccessibleFamilyIds,
+  resolveOwnMemberId,
+} from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import { familyMemberActivationLinkTemplate, sendMail } from '../../shared/mail/index.js'
+import { sendPushToUser } from '../../shared/push/index.js'
 import {
   decryptField,
   encryptField,
@@ -25,10 +30,13 @@ import type {
   UpsertHealthProfileInput,
 } from './families.schema.js'
 
-// Único papel do app-medcare com escrita em FamilyMember/HealthProfile — CAREGIVER só lê.
-// Checado aqui também (não só em families.routes.ts) como defesa em profundidade,
-// no mesmo padrão de medicationsService.assertFamilyWriter.
+// Único papel com poder de gerenciar QUALQUER membro da família (criar/excluir/editar
+// terceiros) — CAREGIVER só lê. Checado aqui também (não só em families.routes.ts) como
+// defesa em profundidade, no mesmo padrão de medicationsService.assertFamilyWriter.
 const WRITER_ROLES: Role[] = ['PATIENT_ADMIN']
+// Quem pode editar um perfil (nome/nascimento/saúde) — PATIENT_ADMIN edita qualquer
+// membro da família, FAMILY_MEMBER só o próprio (restrição aplicada em getScopedOrThrow).
+const PROFILE_WRITER_ROLES: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER']
 
 export const familiesService = {
   // Rota pública — cria a conta do admin familiar, a Family e o FamilyMember admin
@@ -109,7 +117,15 @@ export const familiesService = {
   },
 
   async updateMember(user: AuthUser, id: string, input: UpdateFamilyMemberInput) {
-    assertFamilyWriter(user)
+    assertProfileWriter(user)
+    // isAdmin é uma decisão administrativa (quem pode gerenciar a família) — nunca
+    // uma escolha do próprio morador, mesmo editando o próprio perfil.
+    if (input.isAdmin !== undefined && user.role !== 'PATIENT_ADMIN') {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Apenas o administrador pode alterar essa permissão',
+      })
+    }
     const member = await getScopedOrThrow(user, id)
     const cpfFields = await resolveCpfFields(input.cpf, id)
 
@@ -125,7 +141,7 @@ export const familiesService = {
       }
     }
 
-    const updated = await familiesRepository.updateMember(id, {
+    const memberData = {
       ...(input.fullName !== undefined && { fullNameEncrypted: encryptField(input.fullName) }),
       ...(input.displayName !== undefined && { displayName: input.displayName }),
       ...(input.relationship !== undefined && { relationship: input.relationship }),
@@ -133,12 +149,38 @@ export const familiesService = {
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
       ...(input.isAdmin !== undefined && { isAdmin: input.isAdmin }),
       ...cpfFields,
-    })
+    }
+
+    // Promoção/rebaixamento de admin só tem efeito real se User.role acompanhar
+    // isAdmin — a autorização de escrita em todo o backend é decidida por role
+    // (JWT), não por isAdmin, que sozinho é só uma flag informativa. Sem User
+    // próprio (dependente sem login) não há role pra sincronizar.
+    const isAdminChange = input.isAdmin !== undefined && input.isAdmin !== member.isAdmin
+    const updated =
+      isAdminChange && member.userId
+        ? await familiesRepository.updateMemberAndRole(
+            id,
+            member.userId,
+            memberData,
+            input.isAdmin ? 'PATIENT_ADMIN' : 'FAMILY_MEMBER',
+          )
+        : await familiesRepository.updateMember(id, memberData)
+
+    if (isAdminChange && member.userId) {
+      await sendPushToUser(member.userId, {
+        title: input.isAdmin ? 'Você agora é administrador' : 'Você não é mais administrador',
+        body: input.isAdmin
+          ? 'Você agora pode gerenciar a família, incluindo membros e acessos médicos.'
+          : 'Você não pode mais gerenciar a família, membros e acessos médicos.',
+        data: { type: 'admin-role-changed', memberId: id, isAdmin: input.isAdmin },
+      })
+    }
+
     return toMemberDetail(updated, user.role)
   },
 
   async upsertHealthProfile(user: AuthUser, id: string, input: UpsertHealthProfileInput) {
-    assertFamilyWriter(user)
+    assertProfileWriter(user)
     await getScopedOrThrow(user, id)
 
     const profile = await familiesRepository.upsertHealthProfile(id, {
@@ -273,11 +315,29 @@ function assertFamilyWriter(user: AuthUser) {
   }
 }
 
+function assertProfileWriter(user: AuthUser) {
+  if (!PROFILE_WRITER_ROLES.includes(user.role)) {
+    throw new AppError({
+      code: 'FORBIDDEN',
+      message: 'Perfil não pode editar dados de membros da família',
+    })
+  }
+}
+
+// Escopa por família (todos os papéis) e, para FAMILY_MEMBER, restringe ainda mais
+// ao próprio registro — ele não pode ler/editar o perfil de outro membro da mesma
+// família, mesmo estando dentro do escopo familiar.
 async function getScopedOrThrow(user: AuthUser, id: string) {
   const familyIds = await resolveAccessibleFamilyIds(user)
   const member = await familiesRepository.findByIdScoped(id, familyIds)
   if (!member) {
     throw new AppError({ code: 'NOT_FOUND', message: 'Morador não encontrado' })
+  }
+  if (user.role === 'FAMILY_MEMBER') {
+    const ownId = await resolveOwnMemberId(user)
+    if (member.id !== ownId) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Morador não encontrado' })
+    }
   }
   return member
 }

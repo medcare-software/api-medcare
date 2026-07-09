@@ -11,6 +11,8 @@ import {
 import { medicationsService } from './medications.service.js'
 
 const FAMILY_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'] as const
+// Excluir é ação administrativa — FAMILY_MEMBER fica de fora (ver medications.service.ts).
+const MEDICATION_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER'] as const
 
 export default async function medicationsRoutes(fastify: FastifyInstance) {
   // GET /medications?memberId=&active=
@@ -69,7 +71,7 @@ export default async function medicationsRoutes(fastify: FastifyInstance) {
   // DELETE /medications/:id — soft, seta active: false
   fastify.delete(
     '/medications/:id',
-    { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
+    { preHandler: [authenticate, authorize(...MEDICATION_DELETERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const body = DeactivateMedicationSchema.safeParse(req.body ?? {})

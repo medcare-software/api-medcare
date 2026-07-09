@@ -3,13 +3,14 @@ import { recordSensitiveAccess } from '../security/index.js'
 import type { AuthUser } from '../types/auth.types.js'
 import {
   assertActiveMedicalAccessGrant,
-  assertMemberInScope,
+  assertOwnScopedMemberInScope,
   isFamilyRole,
 } from './member-scope.js'
 
 /**
  * Gate de leitura para os módulos clínicos (medications/vaccines/exams/diagnostics/procedures).
- * Papéis de família: só checa escopo. DOCTOR/CLINIC_ADMIN: exige grant ativo e grava AuditLog.
+ * Papéis de família: PATIENT_ADMIN/CAREGIVER veem a família toda, FAMILY_MEMBER só o próprio
+ * member (ver assertOwnScopedMemberInScope). DOCTOR/CLINIC_ADMIN: exige grant ativo e grava AuditLog.
  */
 export async function assertClinicalReadAccess(
   user: AuthUser,
@@ -17,7 +18,7 @@ export async function assertClinicalReadAccess(
   audit: { action: string; targetType: string },
 ): Promise<void> {
   if (isFamilyRole(user.role)) {
-    await assertMemberInScope(user, memberId)
+    await assertOwnScopedMemberInScope(user, memberId)
     return
   }
 
