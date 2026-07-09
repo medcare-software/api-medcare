@@ -38,7 +38,8 @@ export default async function familiesRoutes(fastify: FastifyInstance) {
     })
   })
 
-  // POST /families/:familyId/members — cadastra morador dependente (sem login)
+  // POST /families/:familyId/members — cadastra morador; com email, cria login
+  // (User FAMILY_MEMBER) e dispara e-mail de ativação — ver families.service.ts
   fastify.post(
     '/families/:familyId/members',
     { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
@@ -52,7 +53,7 @@ export default async function familiesRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const member = await familiesService.createMember(req.user, familyId, body.data)
+      const member = await familiesService.createMember(fastify, req.user, familyId, body.data)
       return reply.status(201).send({ data: member })
     },
   )

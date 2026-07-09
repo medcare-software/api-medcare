@@ -1,9 +1,13 @@
+import crypto from 'node:crypto'
+
 import type { FamilyMember, HealthProfile, Role } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import type { FastifyInstance } from 'fastify'
 
 import { env } from '../../config/env.js'
 import { assertFamilyInScope, resolveAccessibleFamilyIds } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import { familyMemberActivationLinkTemplate, sendMail } from '../../shared/mail/index.js'
 import {
   decryptField,
   encryptField,
@@ -12,6 +16,7 @@ import {
   onlyDigits,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
+import { issuePasswordResetSessionToken } from '../auth/auth.service.js'
 import { familiesRepository } from './families.repository.js'
 import type {
   CreateFamilyMemberInput,
@@ -72,11 +77,26 @@ export const familiesService = {
 
   // Escrita restrita a PATIENT_ADMIN — reforça que um morador (FamilyMember sem
   // login próprio) nunca edita os próprios dados.
-  async createMember(user: AuthUser, familyId: string, input: CreateFamilyMemberInput) {
+  //
+  // Quando input.email está presente, cria também um User(role=FAMILY_MEMBER)
+  // linkado — o membro ganha login próprio e recebe um e-mail com link de
+  // ativação (define a senha reaproveitando o mesmo JWT/tela de "esqueci senha").
+  // Sem email, mantém o comportamento de sempre: FamilyMember sem userId
+  // (dependente sem login, ex. um filho pequeno).
+  async createMember(
+    fastify: FastifyInstance,
+    user: AuthUser,
+    familyId: string,
+    input: CreateFamilyMemberInput,
+  ) {
     assertFamilyWriter(user)
     await assertFamilyInScope(user, familyId)
-    const cpfFields = await resolveCpfFields(input.cpf)
 
+    if (input.email) {
+      return createMemberWithLogin(fastify, user, familyId, { ...input, email: input.email })
+    }
+
+    const cpfFields = await resolveCpfFields(input.cpf)
     const member = await familiesRepository.createMember(familyId, {
       fullNameEncrypted: encryptField(input.fullName),
       displayName: input.displayName,
@@ -143,6 +163,105 @@ export const familiesService = {
     }
     await familiesRepository.softDeleteMember(id)
   },
+}
+
+// input.email presente implica input.cpf presente (CreateFamilyMemberSchema.superRefine
+// já garante isso em runtime) — a checagem abaixo é defesa em profundidade (mesmo
+// padrão de resolveCpfFields), não confiança cega na validação de schema.
+async function createMemberWithLogin(
+  fastify: FastifyInstance,
+  user: AuthUser,
+  familyId: string,
+  input: CreateFamilyMemberInput & { email: string },
+) {
+  if (!input.cpf) {
+    throw new AppError({
+      code: 'VALIDATION_ERROR',
+      message: 'CPF é obrigatório para criar login com e-mail',
+    })
+  }
+
+  const cpfDigits = onlyDigits(input.cpf)
+  const cpfHash = hashForLookup(cpfDigits)
+
+  // Três fontes de colisão possíveis: User por e-mail, User por CPF (qualquer
+  // role — admin, membro, cuidador, médico...), e FamilyMember por CPF sem User
+  // vinculado (dependente sem login). As duas primeiras cobrem "já é uma conta
+  // no sistema"; a terceira é o caso que resolveCpfFields já cobre no fluxo sem
+  // e-mail e que precisa ser replicado aqui — sem ela a colisão só aparece como
+  // um P2002 cru na escrita de FamilyMember dentro de createMemberWithUser.
+  const [existingEmail, existingCpfUser, existingCpfMember] = await Promise.all([
+    familiesRepository.findUserByEmail(input.email),
+    familiesRepository.findUserByCpfHash(cpfHash),
+    familiesRepository.findMemberByCpfHash(cpfHash),
+  ])
+  if (existingEmail) {
+    throw new AppError({
+      code: 'CONFLICT',
+      message: conflictMessage(familyId, existingEmail.familyMember, 'e-mail'),
+    })
+  }
+  if (existingCpfUser) {
+    throw new AppError({
+      code: 'CONFLICT',
+      message: conflictMessage(familyId, existingCpfUser.familyMember, 'CPF'),
+    })
+  }
+  if (existingCpfMember) {
+    throw new AppError({
+      code: 'CONFLICT',
+      message: conflictMessage(familyId, existingCpfMember, 'CPF'),
+    })
+  }
+
+  // Senha inutilizável — só existe para satisfazer a constraint NOT NULL até o
+  // membro definir a senha real pelo link de ativação. Nunca logada/exposta.
+  const placeholderPassword = crypto.randomBytes(32).toString('hex')
+  const passwordHash = await bcrypt.hash(placeholderPassword, env.BCRYPT_ROUNDS)
+
+  const { user: newUser, member } = await familiesRepository.createMemberWithUser(familyId, {
+    email: input.email,
+    passwordHash,
+    fullNameEncrypted: encryptField(input.fullName),
+    displayName: input.displayName,
+    relationship: input.relationship,
+    birthDate: input.birthDate,
+    ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
+    cpfEncrypted: encryptField(cpfDigits),
+    cpfHash,
+  })
+
+  const activationToken = issuePasswordResetSessionToken(
+    fastify,
+    newUser.id,
+    env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+  )
+  const link = `appmedcare://reset-password?token=${activationToken}`
+  const template = familyMemberActivationLinkTemplate(link, input.displayName)
+  await sendMail({ to: newUser.email, ...template })
+
+  return toMemberDetail(member, user.role)
+}
+
+// Mensagem de conflito contextual: diferencia "já é membro desta família" (erro
+// de digitação/duplicidade local) de "já pertence a outra família" (tentativa de
+// reusar a mesma pessoa em duas famílias) de "conta sem FamilyMember" (CAREGIVER/
+// DOCTOR/etc. usando o mesmo e-mail/CPF, caso raro mas possível).
+function conflictMessage(
+  currentFamilyId: string,
+  match: { familyId: string; isAdmin: boolean } | null | undefined,
+  entityLabel: 'e-mail' | 'CPF',
+): string {
+  if (!match) {
+    return `Este ${entityLabel} já está em uso por outra conta no sistema.`
+  }
+  if (match.familyId === currentFamilyId) {
+    return 'Esse membro já está cadastrado nesta família.'
+  }
+  if (match.isAdmin) {
+    return `Este ${entityLabel} já pertence ao administrador de outra família.`
+  }
+  return `Este ${entityLabel} já pertence a um membro de outra família. Não é possível cadastrar a mesma pessoa em famílias diferentes.`
 }
 
 function assertFamilyWriter(user: AuthUser) {

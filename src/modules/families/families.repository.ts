@@ -25,6 +25,15 @@ type CreateFamilyMemberData = {
   cpfHash?: string
 }
 
+// CPF sempre presente aqui — o schema (CreateFamilyMemberSchema.superRefine)
+// garante cpf junto de email antes de chegar no service/repository.
+type CreateFamilyMemberWithUserData = Omit<CreateFamilyMemberData, 'cpfEncrypted' | 'cpfHash'> & {
+  cpfEncrypted: Buffer<ArrayBuffer>
+  cpfHash: string
+  email: string
+  passwordHash: string
+}
+
 type UpdateFamilyMemberData = Partial<CreateFamilyMemberData> & { isAdmin?: boolean }
 
 type UpsertHealthProfileData = {
@@ -37,15 +46,24 @@ type UpsertHealthProfileData = {
 }
 
 export const familiesRepository = {
+  // Inclui familyMember (familyId/isAdmin) para permitir mensagem de conflito
+  // contextual em createMemberWithLogin — quem só checa truthiness (registerAdmin)
+  // não é afetado por isso.
   findUserByEmail(email: string) {
-    return db.user.findUnique({ where: { email: email.toLowerCase() } })
+    return db.user.findUnique({
+      where: { email: email.toLowerCase() },
+      include: { familyMember: { select: { familyId: true, isAdmin: true } } },
+    })
   },
 
   // Pré-checagem de unicidade de CPF antes de gravar — cpfHash é @unique tanto em
   // User quanto em FamilyMember, e sem essa checagem uma colisão vira um 500 cru
   // (P2002) em vez de um 409 CONFLICT tratado.
   findUserByCpfHash(cpfHash: string) {
-    return db.user.findUnique({ where: { cpfHash } })
+    return db.user.findUnique({
+      where: { cpfHash },
+      include: { familyMember: { select: { familyId: true, isAdmin: true } } },
+    })
   },
 
   findMemberByCpfHash(cpfHash: string) {
@@ -116,6 +134,40 @@ export const familiesRepository = {
     return db.familyMember.create({
       data: { familyId, ...omitUndefined(input) },
       include: { healthProfile: true },
+    })
+  },
+
+  // Transação: User(role=FAMILY_MEMBER) + FamilyMember linkado por userId. Mesmo
+  // padrão de createFamilyWithAdmin, mas a Family já existe (não cria uma nova).
+  createMemberWithUser(familyId: string, input: CreateFamilyMemberWithUserData) {
+    return db.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: input.email.toLowerCase(),
+          passwordHash: input.passwordHash,
+          role: 'FAMILY_MEMBER',
+          cpfEncrypted: input.cpfEncrypted,
+          cpfHash: input.cpfHash,
+          status: 'ACTIVE',
+        },
+      })
+
+      const member = await tx.familyMember.create({
+        data: omitUndefined({
+          familyId,
+          userId: user.id,
+          fullNameEncrypted: input.fullNameEncrypted,
+          displayName: input.displayName,
+          relationship: input.relationship,
+          birthDate: input.birthDate,
+          biologicalSex: input.biologicalSex,
+          cpfEncrypted: input.cpfEncrypted,
+          cpfHash: input.cpfHash,
+        }),
+        include: { healthProfile: true },
+      })
+
+      return { user, member }
     })
   },
 

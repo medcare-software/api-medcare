@@ -59,6 +59,10 @@ const envSchema = z.object({
   PASSWORD_RESET_SESSION_EXPIRES_IN: z.string().default('5m'),
   PASSWORD_RESET_MAX_REQUESTS_PER_HOUR: z.coerce.number().int().positive().default(5),
   CAREGIVER_INVITE_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+  // Link de ativação por e-mail (adminFamiliar cria membro com login) — TTL mais
+  // longo que PASSWORD_RESET_SESSION_EXPIRES_IN porque é um link que a pessoa
+  // pode abrir dias depois, não um código digitado na hora.
+  FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN: z.string().default('3d'),
   MEDICATION_LOW_STOCK_THRESHOLD: z.coerce.number().int().positive().default(5),
   ACCESS_EXPIRING_SOON_DAYS: z.coerce.number().int().positive().default(3),
 

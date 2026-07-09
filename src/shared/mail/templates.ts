@@ -11,6 +11,21 @@ export function passwordResetCodeTemplate(code: string, ttlMinutes: number) {
   }
 }
 
+export function familyMemberActivationLinkTemplate(link: string, memberName: string) {
+  return {
+    subject: 'Você foi adicionado a uma família no Medcare — defina sua senha',
+    text: `Olá, ${memberName}! Você foi cadastrado como membro de uma família no Medcare. Para acessar o app, abra o link abaixo no seu celular (com o app Medcare instalado) e defina sua senha: ${link}\nSe você não esperava este e-mail, ignore-o.`,
+    html: `
+      <p>Olá, ${memberName}!</p>
+      <p>Você foi cadastrado como membro de uma família no Medcare.</p>
+      <p>Para acessar o app, toque no botão abaixo no seu celular (com o app Medcare instalado) e defina sua senha:</p>
+      <p><a href="${link}" style="display:inline-block;padding:12px 24px;background:#1e40af;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Definir minha senha</a></p>
+      <p>Se o botão não funcionar, copie e cole este link no seu celular: ${link}</p>
+      <p>Se você não esperava este e-mail, ignore-o.</p>
+    `,
+  }
+}
+
 export function caregiverInviteCodeTemplate(code: string, ttlMinutes: number, familyName: string) {
   return {
     subject: 'Convite para acompanhar uma família — Medcare',

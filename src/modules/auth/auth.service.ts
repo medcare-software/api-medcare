@@ -14,6 +14,21 @@ import type { CrmLoginInput, EmailLoginInput, IdentifierLoginInput } from './aut
 
 const MAX_RESET_CODE_ATTEMPTS = 5
 
+// Reutilizado tanto pelo fluxo de "esqueci a senha" (após verificar o código)
+// quanto pela ativação de conta de membro familiar (link de e-mail) — mesmo
+// JWT de propósito único, só muda quem emite e o TTL.
+export function issuePasswordResetSessionToken(
+  fastify: FastifyInstance,
+  userId: string,
+  expiresIn: string,
+): string {
+  const payload: Omit<PasswordResetSessionPayload, 'iat' | 'exp'> = {
+    sub: userId,
+    purpose: 'password_reset',
+  }
+  return fastify.jwt.sign(payload, { expiresIn })
+}
+
 export const authService = {
   // ── Login ──────────────────────────────────────────────────────────────────
 
@@ -132,13 +147,11 @@ export const authService = {
 
     await authRepository.consumePasswordResetToken(token.id)
 
-    const payload: Omit<PasswordResetSessionPayload, 'iat' | 'exp'> = {
-      sub: user.id,
-      purpose: 'password_reset',
-    }
-    const resetSessionToken = fastify.jwt.sign(payload, {
-      expiresIn: env.PASSWORD_RESET_SESSION_EXPIRES_IN,
-    })
+    const resetSessionToken = issuePasswordResetSessionToken(
+      fastify,
+      user.id,
+      env.PASSWORD_RESET_SESSION_EXPIRES_IN,
+    )
     return { resetSessionToken }
   },
 
