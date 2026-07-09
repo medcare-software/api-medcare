@@ -29,6 +29,9 @@ export const ErrorCode = {
   // ── Storage (MinIO) ────────────────────────────────────
   STORAGE_ERROR: 'STORAGE_ERROR',
 
+  // ── E-mail ────────────────────────────────────────────
+  EMAIL_SEND_FAILED: 'EMAIL_SEND_FAILED',
+
   // ── Servidor ──────────────────────────────────────────
   DATABASE_ERROR: 'DATABASE_ERROR',
   INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',

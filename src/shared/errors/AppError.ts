@@ -41,6 +41,7 @@ export class AppError extends Error {
       INVALID_INPUT: 400,
       RATE_LIMIT_EXCEEDED: 429,
       STORAGE_ERROR: 500,
+      EMAIL_SEND_FAILED: 500,
       DATABASE_ERROR: 500,
       INTERNAL_SERVER_ERROR: 500,
     }
