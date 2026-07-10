@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { Readable } from 'node:stream'
 
 import { env } from '../../config/env.js'
 import { FILES_BUCKET, storageClient } from '../../config/storage.js'
@@ -19,6 +20,15 @@ export const filesRepository = {
 
   statObject(objectKey: string) {
     return storageClient.statObject(FILES_BUCKET, objectKey)
+  },
+
+  async getObject(objectKey: string): Promise<Buffer> {
+    const stream: Readable = await storageClient.getObject(FILES_BUCKET, objectKey)
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) {
+      chunks.push(chunk as Buffer)
+    }
+    return Buffer.concat(chunks)
   },
 
   presignedGetUrl(objectKey: string, expirySeconds: number) {

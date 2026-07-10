@@ -12,6 +12,7 @@ import familiesRoutes from './modules/families/families.routes.js'
 import filesRoutes from './modules/files/files.routes.js'
 import financialRoutes from './modules/financial/financial.routes.js'
 import medicalAccessRoutes from './modules/medical-access/medical-access.routes.js'
+import medicationScanRoutes from './modules/medication-scan/medication-scan.routes.js'
 import medicationsRoutes from './modules/medications/medications.routes.js'
 import notificationsRoutes from './modules/notifications/notifications.routes.js'
 import plansRoutes from './modules/plans/plans.routes.js'
@@ -96,6 +97,7 @@ export async function buildApp() {
   await app.register(financialRoutes, { prefix: env.API_PREFIX })
   await app.register(notificationsRoutes, { prefix: env.API_PREFIX })
   await app.register(medicationsRoutes, { prefix: env.API_PREFIX })
+  await app.register(medicationScanRoutes, { prefix: env.API_PREFIX })
   await app.register(vaccinesRoutes, { prefix: env.API_PREFIX })
   await app.register(examsRoutes, { prefix: env.API_PREFIX })
   await app.register(diagnosticsRoutes, { prefix: env.API_PREFIX })

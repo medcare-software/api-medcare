@@ -32,6 +32,9 @@ export const ErrorCode = {
   // ── E-mail ────────────────────────────────────────────
   EMAIL_SEND_FAILED: 'EMAIL_SEND_FAILED',
 
+  // ── IA de visão ───────────────────────────────────────
+  AI_EXTRACTION_FAILED: 'AI_EXTRACTION_FAILED',
+
   // ── Servidor ──────────────────────────────────────────
   DATABASE_ERROR: 'DATABASE_ERROR',
   INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',

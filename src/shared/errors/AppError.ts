@@ -42,6 +42,7 @@ export class AppError extends Error {
       RATE_LIMIT_EXCEEDED: 429,
       STORAGE_ERROR: 500,
       EMAIL_SEND_FAILED: 500,
+      AI_EXTRACTION_FAILED: 500,
       DATABASE_ERROR: 500,
       INTERNAL_SERVER_ERROR: 500,
     }

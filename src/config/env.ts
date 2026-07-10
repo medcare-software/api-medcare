@@ -80,6 +80,13 @@ const envSchema = z.object({
   // ── Retention / LGPD ───────────────────────────────────────
   AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
   SOFT_DELETE_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
+  // ── IA de visão (extração de dados do medicamento a partir de foto) ──────────
+  // Opcional de propósito, como o SMTP: sem a chave em dev/local, o endpoint de
+  // scan lança AI_EXTRACTION_FAILED de forma controlada em vez de derrubar o
+  // boot do servidor — ver src/modules/medication-scan/medication-scan.service.ts.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
 })
 
 const parsed = envSchema.safeParse(process.env)
