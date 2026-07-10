@@ -8,13 +8,49 @@ import { filesRepository } from '../files/files.repository.js'
 const SUPPORTED_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 type SupportedMediaType = (typeof SUPPORTED_MEDIA_TYPES)[number]
 
+const UNSUPPORTED_MEDIA_TYPES = new Set([
+  'image/heic',
+  'image/heif',
+  'image/heic-sequence',
+  'image/heif-sequence',
+  'application/octet-stream',
+])
+
+function normalizeContentType(contentType: string | undefined): string | undefined {
+  if (!contentType) return undefined
+  const base = contentType.split(';')[0]?.trim().toLowerCase()
+  if (!base) return undefined
+  // Alguns clients enviam image/jpg — Anthropic só aceita image/jpeg.
+  if (base === 'image/jpg') return 'image/jpeg'
+  return base
+}
+
 function resolveMediaType(contentType: string | undefined): SupportedMediaType {
-  if (contentType && (SUPPORTED_MEDIA_TYPES as readonly string[]).includes(contentType)) {
-    return contentType as SupportedMediaType
+  const normalized = normalizeContentType(contentType)
+
+  if (!normalized) {
+    // Content-Type ausente no objeto (uploads legados) — fotos da câmera do app
+    // são JPEG; fallback seguro só quando o header não foi gravado.
+    return 'image/jpeg'
   }
-  // Fotos da câmera do app sempre chegam como JPEG — fallback seguro para o
-  // caso raro de o content-type não ter sido gravado no upload.
-  return 'image/jpeg'
+
+  if ((SUPPORTED_MEDIA_TYPES as readonly string[]).includes(normalized)) {
+    return normalized as SupportedMediaType
+  }
+
+  if (UNSUPPORTED_MEDIA_TYPES.has(normalized)) {
+    throw new AppError({
+      code: 'INVALID_INPUT',
+      message:
+        'Formato de imagem não suportado. Tire a foto novamente em JPEG ou PNG.',
+    })
+  }
+
+  throw new AppError({
+    code: 'INVALID_INPUT',
+    message:
+      'Formato de imagem não suportado. Use JPEG, PNG ou WebP e tente novamente.',
+  })
 }
 
 export const medicationScanService = {
