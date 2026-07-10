@@ -278,7 +278,7 @@ async function createMemberWithLogin(
     newUser.id,
     env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
   )
-  const link = `appmedcare://reset-password?token=${activationToken}`
+  const link = `${env.FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
   const template = familyMemberActivationLinkTemplate(link, input.displayName)
   await sendMail({ to: newUser.email, ...template })
 

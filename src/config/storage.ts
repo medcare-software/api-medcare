@@ -9,6 +9,7 @@ export const storageClient = new Client({
   useSSL: env.MINIO_USE_SSL,
   accessKey: env.MINIO_ACCESS_KEY,
   secretKey: env.MINIO_SECRET_KEY,
+  region: env.MINIO_REGION,
 })
 
 export const FILES_BUCKET = env.MINIO_BUCKET

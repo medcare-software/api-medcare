@@ -43,6 +43,11 @@ const envSchema = z.object({
   MINIO_ACCESS_KEY: z.string().default('medcare'),
   MINIO_SECRET_KEY: z.string().default('medcare123456'),
   MINIO_BUCKET: z.string().default('medcare-files'),
+  // Sem isso, o SDK minio tenta autodetectar a região do bucket com uma
+  // requisição assinada para 'us-east-1' — em S3 real fora dessa região (ex:
+  // sa-east-1), a AWS rejeita essa autodetecção com AuthorizationHeaderMalformed
+  // antes mesmo do upload em si acontecer.
+  MINIO_REGION: z.string().default('us-east-1'),
 
   // ── App ──────────────────────────────────────────────────
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(14).default(12),
@@ -63,6 +68,14 @@ const envSchema = z.object({
   // longo que PASSWORD_RESET_SESSION_EXPIRES_IN porque é um link que a pessoa
   // pode abrir dias depois, não um código digitado na hora.
   FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN: z.string().default('3d'),
+  // Página https intermediária (ver web-medcarelp/reset-password.html) que
+  // redireciona para appmedcare://reset-password?token=... — clientes de e-mail
+  // (Outlook etc.) não linkificam/resolvem esquemas customizados diretamente,
+  // então o e-mail sempre aponta pra cá em vez do deep link cru.
+  FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL: z
+    .string()
+    .url()
+    .default('https://lp.medcaresw.com/reset-password.html'),
   MEDICATION_LOW_STOCK_THRESHOLD: z.coerce.number().int().positive().default(5),
   ACCESS_EXPIRING_SOON_DAYS: z.coerce.number().int().positive().default(3),
 
