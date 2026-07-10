@@ -178,6 +178,18 @@ export const authService = {
     // Troca de senha derruba todas as sessões ativas — força novo login em todo dispositivo.
     await authRepository.revokeAllUserRefreshTokens(payload.sub)
   },
+
+  // Checagem sem efeito colateral (não consome/revoga nada) — usada pela página
+  // https intermediária antes de mostrar a UI de "definir senha" pra um token
+  // que pode ter vindo de qualquer lugar, não só de um e-mail real emitido por nós.
+  validateResetSessionToken(fastify: FastifyInstance, token: string): boolean {
+    try {
+      const payload = fastify.jwt.verify<PasswordResetSessionPayload>(token)
+      return payload.purpose === 'password_reset'
+    } catch {
+      return false
+    }
+  },
 }
 
 async function assertCredentials<T extends { passwordHash: string; status: string } | null>(

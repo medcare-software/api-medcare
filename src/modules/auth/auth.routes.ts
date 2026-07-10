@@ -10,6 +10,7 @@ import {
   LogoutSchema,
   RefreshSchema,
   ResetPasswordSchema,
+  ValidateResetSessionSchema,
   VerifyResetCodeSchema,
 } from './auth.schema.js'
 import { authService } from './auth.service.js'
@@ -153,5 +154,20 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
     await authService.resetPassword(fastify, body.data.resetSessionToken, body.data.newPassword)
     return reply.status(204).send()
+  })
+
+  // POST /auth/reset-password/validate — checagem sem efeito colateral, usada pela
+  // página https intermediária (web-medcarelp) antes de mostrar "Abrir no app"
+  fastify.post('/auth/reset-password/validate', async (req, reply) => {
+    const body = ValidateResetSessionSchema.safeParse(req.body)
+    if (!body.success) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: body.error.issues,
+      })
+    }
+    const valid = authService.validateResetSessionToken(fastify, body.data.token)
+    return reply.status(200).send({ data: { valid } })
   })
 }

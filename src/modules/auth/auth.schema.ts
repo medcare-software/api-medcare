@@ -44,6 +44,13 @@ export const ResetPasswordSchema = z.object({
   newPassword: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
 })
 
+// Usado pela página https intermediária (web-medcarelp) antes de redirecionar
+// pro app — evita mostrar a tela de "definir senha" pra qualquer token/link
+// arbitrário, sem revelar mais do que um booleano de validade.
+export const ValidateResetSessionSchema = z.object({
+  token: z.string().min(1, { message: 'Token é obrigatório' }),
+})
+
 export type EmailLoginInput = z.infer<typeof EmailLoginSchema>
 export type IdentifierLoginInput = z.infer<typeof IdentifierLoginSchema>
 export type CrmLoginInput = z.infer<typeof CrmLoginSchema>
@@ -53,3 +60,4 @@ export type LogoutInput = z.infer<typeof LogoutSchema>
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>
 export type VerifyResetCodeInput = z.infer<typeof VerifyResetCodeSchema>
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>
+export type ValidateResetSessionInput = z.infer<typeof ValidateResetSessionSchema>
