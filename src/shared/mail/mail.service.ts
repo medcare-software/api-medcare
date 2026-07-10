@@ -26,6 +26,11 @@ function getTransporter(): Transporter | null {
       // de fazer upgrade automático.
       requireTLS: env.SMTP_PORT === 587,
       auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
+      // Sem isso o SMTP pode pendurar a request HTTP além do timeout do app
+      // (15–30s) e o cliente interpreta como "Sem conexão com a internet".
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     })
   }
   return transporter

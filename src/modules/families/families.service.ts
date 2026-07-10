@@ -280,7 +280,17 @@ async function createMemberWithLogin(
   )
   const link = `${env.FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
   const template = familyMemberActivationLinkTemplate(link, input.displayName)
-  await sendMail({ to: newUser.email, ...template })
+
+  // Membro/User já persistidos — falha de SMTP não pode derrubar o create nem
+  // deixar o app em "Sem conexão" por timeout. Reenvio pode ser feito depois.
+  try {
+    await sendMail({ to: newUser.email, ...template })
+  } catch (err) {
+    fastify.log.error(
+      { err, userId: newUser.id, email: newUser.email },
+      'Falha ao enviar e-mail de ativação do membro familiar',
+    )
+  }
 
   return toMemberDetail(member, user.role)
 }
