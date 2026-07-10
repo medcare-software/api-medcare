@@ -51,7 +51,7 @@ export const familiesRepository = {
   // não é afetado por isso.
   findUserByEmail(email: string) {
     return db.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: email.toLowerCase(), deletedAt: null },
       include: { familyMember: { select: { familyId: true, isAdmin: true } } },
     })
   },
@@ -61,7 +61,7 @@ export const familiesRepository = {
   // (P2002) em vez de um 409 CONFLICT tratado.
   findUserByCpfHash(cpfHash: string) {
     return db.user.findUnique({
-      where: { cpfHash },
+      where: { cpfHash, deletedAt: null },
       include: { familyMember: { select: { familyId: true, isAdmin: true } } },
     })
   },
@@ -194,8 +194,25 @@ export const familiesRepository = {
     })
   },
 
-  softDeleteMember(id: string) {
-    return db.familyMember.update({ where: { id }, data: { deletedAt: new Date() } })
+  // Soft-delete do FamilyMember é sempre seguro (evita cascatear a exclusão para
+  // Medication/Vaccine/Exam/etc.); quando o membro tem login próprio (userId),
+  // desativa o User junto e revoga sessões — mesmo padrão de doctors.repository.ts#deactivateTx —
+  // pra liberar o e-mail pra um novo cadastro (ver findUserByEmail/findUserByCpfHash).
+  softDeleteMember(id: string, userId: string | null) {
+    if (!userId) {
+      return db.familyMember.update({ where: { id }, data: { deletedAt: new Date() } })
+    }
+    return db.$transaction([
+      db.familyMember.update({ where: { id }, data: { deletedAt: new Date() } }),
+      db.user.update({
+        where: { id: userId },
+        data: { deletedAt: new Date(), status: 'INACTIVE' },
+      }),
+      db.refreshToken.updateMany({
+        where: { userId, revoked: false },
+        data: { revoked: true, revokedAt: new Date() },
+      }),
+    ])
   },
 
   upsertHealthProfile(memberId: string, data: UpsertHealthProfileData) {

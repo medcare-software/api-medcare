@@ -203,7 +203,7 @@ export const familiesService = {
         message: 'Não é possível remover o administrador da família',
       })
     }
-    await familiesRepository.softDeleteMember(id)
+    await familiesRepository.softDeleteMember(id, member.userId)
   },
 }
 
