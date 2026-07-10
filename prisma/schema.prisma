@@ -288,6 +288,9 @@ model Medication {
   lowStockNotifiedAt  DateTime? // evita reenviar push de estoque baixo a cada dose registrada
   prescriptionFileId  String? // referência a objeto no storage (MinIO)
   deactivationReason  String?
+  /// Chave do cliente pra deduplicar create quando o app recebe NETWORK_ERROR
+  /// após o POST já ter gravado (retry do usuário).
+  idempotencyKey      String?   @unique
   active              Boolean               @default(true)
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt

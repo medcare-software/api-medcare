@@ -14,6 +14,16 @@ const FAMILY_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'] as const
 // Excluir é ação administrativa — FAMILY_MEMBER fica de fora (ver medications.service.ts).
 const MEDICATION_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER'] as const
 
+function readIdempotencyKey(headers: {
+  [key: string]: string | string[] | undefined
+}): string | undefined {
+  const raw = headers['idempotency-key']
+  const value = Array.isArray(raw) ? raw[0] : raw
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 && trimmed.length <= 128 ? trimmed : undefined
+}
+
 export default async function medicationsRoutes(fastify: FastifyInstance) {
   // GET /medications?memberId=&active=
   fastify.get('/medications', { preHandler: [authenticate] }, async (req, reply) => {
@@ -44,7 +54,11 @@ export default async function medicationsRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const medication = await medicationsService.create(req.user, body.data)
+      const medication = await medicationsService.create(
+        req.user,
+        body.data,
+        readIdempotencyKey(req.headers),
+      )
       return reply.status(201).send({ data: medication })
     },
   )

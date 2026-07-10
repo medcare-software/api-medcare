@@ -27,8 +27,22 @@ export const medicationsRepository = {
     return db.medication.findUnique({ where: { id } })
   },
 
-  create(memberId: string, input: Omit<CreateMedicationInput, 'memberId'>) {
-    return db.medication.create({ data: { memberId, ...omitUndefined(input) } })
+  findByIdempotencyKey(idempotencyKey: string) {
+    return db.medication.findUnique({ where: { idempotencyKey } })
+  },
+
+  create(
+    memberId: string,
+    input: Omit<CreateMedicationInput, 'memberId'>,
+    idempotencyKey?: string,
+  ) {
+    return db.medication.create({
+      data: {
+        memberId,
+        ...omitUndefined(input),
+        ...(idempotencyKey && { idempotencyKey }),
+      },
+    })
   },
 
   update(id: string, input: UpdateMedicationInput) {

@@ -34,11 +34,35 @@ export const medicationsService = {
     return medicationsRepository.findManyByMemberIds([memberId], filters)
   },
 
-  async create(user: AuthUser, input: CreateMedicationInput) {
+  async create(user: AuthUser, input: CreateMedicationInput, idempotencyKey?: string) {
     assertFamilyWriter(user)
     await assertOwnScopedMemberInScope(user, input.memberId)
+
+    if (idempotencyKey) {
+      const existing = await medicationsRepository.findByIdempotencyKey(idempotencyKey)
+      if (existing) {
+        await assertOwnScopedMemberInScope(user, existing.memberId)
+        return existing
+      }
+    }
+
     const { memberId, ...data } = input
-    return medicationsRepository.create(memberId, data)
+    try {
+      return await medicationsRepository.create(memberId, data, idempotencyKey)
+    } catch (err) {
+      // Corrida: dois POSTs com a mesma key — o 2º perde no @unique e devolve o 1º.
+      if (
+        idempotencyKey &&
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        err.code === 'P2002'
+      ) {
+        const existing = await medicationsRepository.findByIdempotencyKey(idempotencyKey)
+        if (existing) return existing
+      }
+      throw err
+    }
   },
 
   async update(user: AuthUser, id: string, input: UpdateMedicationInput) {
