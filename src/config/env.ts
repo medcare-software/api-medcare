@@ -99,7 +99,7 @@ const envSchema = z.object({
   // scan lança AI_EXTRACTION_FAILED de forma controlada em vez de derrubar o
   // boot do servidor — ver src/modules/medication-scan/medication-scan.service.ts.
   ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5-20250929'),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
 })
 
 const parsed = envSchema.safeParse(process.env)

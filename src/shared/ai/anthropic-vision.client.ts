@@ -133,7 +133,10 @@ export async function extractMedicationFromImage(
         },
       ],
     })
-  } catch {
+  } catch (err) {
+    console.error(
+      `[medication-scan] Falha ao chamar a API da Anthropic: ${err instanceof Error ? err.message : String(err)}`,
+    )
     throw new AppError({
       code: 'AI_EXTRACTION_FAILED',
       message: 'Não foi possível analisar a foto agora. Tente novamente.',
@@ -144,6 +147,7 @@ export async function extractMedicationFromImage(
     (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
   )
   if (!toolUse) {
+    console.error(`[medication-scan] Resposta sem tool_use: ${JSON.stringify(response.content)}`)
     throw new AppError({
       code: 'AI_EXTRACTION_FAILED',
       message: 'A IA não retornou um resultado válido.',
@@ -152,6 +156,9 @@ export async function extractMedicationFromImage(
 
   const parsed = ScanToolInputSchema.safeParse(toolUse.input)
   if (!parsed.success) {
+    console.error(
+      `[medication-scan] tool_use.input inválido: ${JSON.stringify(toolUse.input)} — ${parsed.error.message}`,
+    )
     throw new AppError({
       code: 'AI_EXTRACTION_FAILED',
       message: 'A IA retornou um resultado em formato inesperado.',
