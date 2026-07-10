@@ -68,14 +68,14 @@ const envSchema = z.object({
   // longo que PASSWORD_RESET_SESSION_EXPIRES_IN porque é um link que a pessoa
   // pode abrir dias depois, não um código digitado na hora.
   FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN: z.string().default('3d'),
-  // Página https intermediária (ver web-medcarelp/reset-password.html) que
-  // redireciona para appmedcare://reset-password?token=... — clientes de e-mail
-  // (Outlook etc.) não linkificam/resolvem esquemas customizados diretamente,
-  // então o e-mail sempre aponta pra cá em vez do deep link cru.
+  // Página https intermediária (ver web-medcarelp app/reset-password/page.tsx)
+  // que redireciona para appmedcare://reset-password?token=... — clientes de
+  // e-mail (Outlook etc.) não linkificam/resolvem esquemas customizados
+  // diretamente, então o e-mail sempre aponta pra cá em vez do deep link cru.
   FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL: z
     .string()
     .url()
-    .default('https://lp.medcaresw.com/reset-password.html'),
+    .default('https://lp.medcaresw.com/reset-password'),
   MEDICATION_LOW_STOCK_THRESHOLD: z.coerce.number().int().positive().default(5),
   ACCESS_EXPIRING_SOON_DAYS: z.coerce.number().int().positive().default(3),
 
