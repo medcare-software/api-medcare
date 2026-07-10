@@ -35,6 +35,11 @@ export const ErrorCode = {
   // ── IA de visão ───────────────────────────────────────
   AI_EXTRACTION_FAILED: 'AI_EXTRACTION_FAILED',
 
+  // ── Integração Gmail ──────────────────────────────────
+  GMAIL_OAUTH_STATE_INVALID: 'GMAIL_OAUTH_STATE_INVALID',
+  GMAIL_OAUTH_EXCHANGE_FAILED: 'GMAIL_OAUTH_EXCHANGE_FAILED',
+  GMAIL_NOT_CONNECTED: 'GMAIL_NOT_CONNECTED',
+
   // ── Servidor ──────────────────────────────────────────
   DATABASE_ERROR: 'DATABASE_ERROR',
   INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',

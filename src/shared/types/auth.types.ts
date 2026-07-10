@@ -35,3 +35,13 @@ export interface PasswordResetSessionPayload {
   iat?: number
   exp?: number
 }
+
+// Emitido só por POST /integrations/gmail/connect/start, curta duração — carrega
+// o userId através do redirect do Google (que não manda nosso header de auth de
+// volta) até o callback público confirmar de quem é aquela conexão.
+export interface GmailOAuthStatePayload {
+  sub: string
+  purpose: 'gmail_oauth_state'
+  iat?: number
+  exp?: number
+}

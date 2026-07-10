@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 
+import { db } from '../../config/database.js'
 import { env } from '../../config/env.js'
 import {
   assertMemberInScope,
@@ -8,7 +9,6 @@ import {
   resolveDoctorId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
-import { db } from '../../config/database.js'
 import { sendPushToUser } from '../../shared/push/index.js'
 import { hashForLookup } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
@@ -27,6 +27,7 @@ export const medicalAccessService = {
       memberId: input.memberId,
       codeHash,
       validity: input.validity,
+      ...(input.temporaryDays !== undefined && { temporaryDays: input.temporaryDays }),
       expiresAt,
     })
 
@@ -69,10 +70,11 @@ export const medicalAccessService = {
 
     // expiresAt tem significado duplo neste model: até aqui era o prazo de resgate
     // do código; a partir daqui vira o prazo do acesso clínico em si.
+    const temporaryDays = grant.temporaryDays ?? env.MEDICAL_ACCESS_TEMPORARY_GRANT_DAYS
     const newExpiresAt =
       grant.validity === 'PERMANENT'
         ? null
-        : new Date(Date.now() + env.MEDICAL_ACCESS_TEMPORARY_GRANT_DAYS * 24 * 60 * 60_000)
+        : new Date(Date.now() + temporaryDays * 24 * 60 * 60_000)
 
     const activated = await medicalAccessRepository.activate(grant.id, {
       ...(doctorId !== undefined && { doctorId }),

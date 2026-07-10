@@ -10,7 +10,13 @@ interface ActivateGrantData {
 }
 
 export const medicalAccessRepository = {
-  create(data: { memberId: string; codeHash: string; validity: AccessValidity; expiresAt: Date }) {
+  create(data: {
+    memberId: string
+    codeHash: string
+    validity: AccessValidity
+    temporaryDays?: number
+    expiresAt: Date
+  }) {
     return db.medicalAccessGrant.create({ data })
   },
 

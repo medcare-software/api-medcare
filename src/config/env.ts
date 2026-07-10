@@ -100,6 +100,23 @@ const envSchema = z.object({
   // boot do servidor — ver src/modules/medication-scan/medication-scan.service.ts.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
+
+  // ── Integração Gmail (OAuth — conectar/desconectar conta, Fase 1) ────────────
+  // Opcionais de propósito, como o SMTP/Anthropic: sem credenciais em dev/local,
+  // os endpoints de /integrations/gmail lançam erro controlado em vez de
+  // derrubar o boot — ver src/modules/gmail-integration/gmail-integration.service.ts.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  // URL HTTPS pública deste backend que o Google chama após o consentimento —
+  // precisa estar cadastrada como Redirect URI autorizada no Google Cloud Console.
+  GOOGLE_OAUTH_REDIRECT_URI: z
+    .string()
+    .url()
+    .default('https://api.medcaresw.com/api/v1/integrations/gmail/oauth-callback'),
+  // Deep link pro qual o backend redireciona o navegador do celular depois de
+  // processar o callback do Google — appmedcare:// já é usado em outros fluxos
+  // (ver reset-password), reaproveitado aqui.
+  GOOGLE_OAUTH_APP_RETURN_SCHEME: z.string().default('appmedcare://gmail-oauth-callback'),
 })
 
 const parsed = envSchema.safeParse(process.env)

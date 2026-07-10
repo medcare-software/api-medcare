@@ -17,11 +17,11 @@ export function maskCnpj(cnpj: string): string {
   return `**.***.***/${digits.slice(8, 12)}-${digits.slice(12)}`
 }
 
-export function maskEmail(email: string): string {
+export function maskEmail(email: string, visibleChars = 1): string {
   const [user, domain] = email.split('@')
   if (!user || !domain) return '***'
-  const visible = user.slice(0, 1)
-  return `${visible}${'*'.repeat(Math.max(user.length - 1, 3))}@${domain}`
+  const visible = user.slice(0, visibleChars)
+  return `${visible}${'*'.repeat(Math.max(user.length - visibleChars, 3))}@${domain}`
 }
 
 export function maskPhone(phone: string): string {

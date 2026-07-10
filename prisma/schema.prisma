@@ -160,6 +160,7 @@ model User {
   notificationPrefs   NotificationPreference[]
   passwordResetTokens PasswordResetToken[]
   pushTokens          PushToken[]
+  gmailIntegration    GmailIntegration?
 
   @@index([role])
   @@index([status])
@@ -414,6 +415,7 @@ model MedicalAccessGrant {
   codeHash           String         @unique // código de 6-8 dígitos, nunca salvo em texto plano
   status             AccessStatus   @default(PENDING)
   validity           AccessValidity @default(TEMPORARY)
+  temporaryDays      Int? // dias escolhidos (30/60) quando validity=TEMPORARY; null = usa o default do env
   expiresAt          DateTime?
   grantedAt          DateTime?
   revokedAt          DateTime?
@@ -680,4 +682,37 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// Integração com Gmail (Fase 1: apenas connect/disconnect)
+// A varredura automática de e-mails/importação de laudos (ExamSource.GMAIL)
+// é uma entrega futura — importedCount fica em 0 até lá.
+// ─────────────────────────────────────────────
+
+enum GmailIntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+}
+
+model GmailIntegration {
+  id                    String                 @id @default(cuid())
+  userId                String                 @unique
+  googleEmail           String
+  accessTokenEncrypted  Bytes?
+  refreshTokenEncrypted Bytes?
+  tokenExpiresAt        DateTime?
+  scope                 String
+  status                GmailIntegrationStatus @default(CONNECTED)
+  autoImportEnabled     Boolean                @default(true)
+  importedCount         Int                    @default(0)
+  connectedAt           DateTime               @default(now())
+  lastVerifiedAt        DateTime               @default(now())
+  disconnectedAt        DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("gmail_integrations")
 }
