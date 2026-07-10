@@ -17,6 +17,18 @@ export default async function medicationScanRoutes(fastify: FastifyInstance) {
       })
     }
     const result = await medicationScanService.scan(body.data.fileId)
+    req.log.info(
+      {
+        fileId: body.data.fileId,
+        recognized: result.recognized,
+        medicationName: result.medicationName,
+        dosage: result.dosage,
+        dosageUnit: result.dosageUnit,
+        formType: result.formType,
+        stripeColor: result.stripeColor,
+      },
+      '[medication-scan] resposta enviada ao app',
+    )
     return reply.status(200).send({ data: result })
   })
 }

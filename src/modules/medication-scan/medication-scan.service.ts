@@ -55,17 +55,40 @@ function resolveMediaType(contentType: string | undefined): SupportedMediaType {
 
 export const medicationScanService = {
   async scan(fileId: string): Promise<MedicationScanResult> {
+    const startedAt = Date.now()
+    console.info(`[medication-scan] Início fileId=${fileId}`)
+
     let contentType: string | undefined
     try {
       const stat = await filesRepository.statObject(fileId)
       contentType = stat.metaData?.['content-type']
+      console.info(
+        `[medication-scan] Arquivo no storage size=${stat.size}B contentType=${contentType ?? '(ausente)'}`,
+      )
     } catch {
+      console.error(`[medication-scan] Arquivo não encontrado fileId=${fileId}`)
       throw new AppError({ code: 'NOT_FOUND', message: 'Arquivo não encontrado' })
     }
 
+    const mediaType = resolveMediaType(contentType)
     const buffer = await filesRepository.getObject(fileId)
     const imageBase64 = buffer.toString('base64')
 
-    return extractMedicationFromImage(imageBase64, resolveMediaType(contentType))
+    console.info(
+      `[medication-scan] Imagem carregada buffer=${buffer.length}B mediaType=${mediaType}`,
+    )
+
+    try {
+      const result = await extractMedicationFromImage(imageBase64, mediaType)
+      console.info(
+        `[medication-scan] Fim fileId=${fileId} em ${Date.now() - startedAt}ms → ${JSON.stringify(result)}`,
+      )
+      return result
+    } catch (err) {
+      console.error(
+        `[medication-scan] Fim com erro fileId=${fileId} em ${Date.now() - startedAt}ms: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
   },
 }

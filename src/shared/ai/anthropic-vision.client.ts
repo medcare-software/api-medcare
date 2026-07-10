@@ -114,6 +114,11 @@ export async function extractMedicationFromImage(
   mediaType: 'image/jpeg' | 'image/png' | 'image/webp',
 ): Promise<MedicationScanResult> {
   const anthropic = getClient()
+  const startedAt = Date.now()
+
+  console.info(
+    `[medication-scan] Chamando Anthropic model=${env.ANTHROPIC_MODEL} mediaType=${mediaType} imageBytes≈${Math.round((imageBase64.length * 3) / 4)}`,
+  )
 
   let response: Anthropic.Message
   try {
@@ -135,13 +140,18 @@ export async function extractMedicationFromImage(
     })
   } catch (err) {
     console.error(
-      `[medication-scan] Falha ao chamar a API da Anthropic: ${err instanceof Error ? err.message : String(err)}`,
+      `[medication-scan] Falha ao chamar a API da Anthropic (${Date.now() - startedAt}ms): ${err instanceof Error ? err.message : String(err)}`,
     )
     throw new AppError({
       code: 'AI_EXTRACTION_FAILED',
       message: 'Não foi possível analisar a foto agora. Tente novamente.',
     })
   }
+
+  const elapsedMs = Date.now() - startedAt
+  console.info(
+    `[medication-scan] Anthropic respondeu em ${elapsedMs}ms stop_reason=${response.stop_reason} input_tokens=${response.usage.input_tokens} output_tokens=${response.usage.output_tokens}`,
+  )
 
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
@@ -153,6 +163,8 @@ export async function extractMedicationFromImage(
       message: 'A IA não retornou um resultado válido.',
     })
   }
+
+  console.info(`[medication-scan] tool_use.input bruto: ${JSON.stringify(toolUse.input)}`)
 
   const parsed = ScanToolInputSchema.safeParse(toolUse.input)
   if (!parsed.success) {
@@ -166,10 +178,13 @@ export async function extractMedicationFromImage(
   }
 
   if (!parsed.data.recognized) {
+    console.info(
+      `[medication-scan] Resultado: recognized=false (foto não identificada como medicamento de uso humano)`,
+    )
     return { recognized: false, stripeColor: 'NONE' }
   }
 
-  return omitUndefined({
+  const result = omitUndefined({
     recognized: true,
     medicationName: parsed.data.medicationName,
     dosage: parsed.data.dosage,
@@ -177,4 +192,14 @@ export async function extractMedicationFromImage(
     formType: parsed.data.formType,
     stripeColor: parsed.data.stripeColor ?? 'NONE',
   })
+
+  console.info(
+    `[medication-scan] Resultado: recognized=true` +
+      ` name=${result.medicationName ?? '(vazio)'}` +
+      ` dosage=${result.dosage ?? '(vazio)'}${result.dosageUnit ?? ''}` +
+      ` formType=${result.formType ?? '(vazio)'}` +
+      ` stripeColor=${result.stripeColor}`,
+  )
+
+  return result
 }
