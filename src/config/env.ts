@@ -112,7 +112,9 @@ const envSchema = z.object({
   GOOGLE_OAUTH_REDIRECT_URI: z
     .string()
     .url()
-    .default('https://api.medcaresw.com/api/v1/integrations/gmail/oauth-callback'),
+    .default(
+      'https://api-medcare-production.up.railway.app/api/v1/integrations/gmail/oauth-callback',
+    ),
   // Deep link pro qual o backend redireciona o navegador do celular depois de
   // processar o callback do Google — appmedcare:// já é usado em outros fluxos
   // (ver reset-password), reaproveitado aqui.

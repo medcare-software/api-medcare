@@ -31,6 +31,10 @@ export const filesRepository = {
     return Buffer.concat(chunks)
   },
 
+  async deleteObject(objectKey: string): Promise<void> {
+    await storageClient.removeObject(FILES_BUCKET, objectKey)
+  },
+
   presignedGetUrl(objectKey: string, expirySeconds: number) {
     return storageClient.presignedGetObject(FILES_BUCKET, objectKey, expirySeconds)
   },
@@ -43,7 +47,7 @@ export const filesRepository = {
 async function ensureBucket() {
   // Em S3 real, o bucket é criado e gerenciado externamente pelo cliente —
   // pular a checagem evita exigir s3:ListBucket/s3:CreateBucket na IAM policy,
-  // que fica restrita só a s3:PutObject/s3:GetObject.
+  // que fica restrita a s3:PutObject/s3:GetObject/s3:DeleteObject.
   if (env.STORAGE_DRIVER === 's3') return
 
   const exists = await storageClient.bucketExists(FILES_BUCKET)

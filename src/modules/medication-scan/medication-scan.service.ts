@@ -70,15 +70,15 @@ export const medicationScanService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Arquivo não encontrado' })
     }
 
-    const mediaType = resolveMediaType(contentType)
-    const buffer = await filesRepository.getObject(fileId)
-    const imageBase64 = buffer.toString('base64')
-
-    console.info(
-      `[medication-scan] Imagem carregada buffer=${buffer.length}B mediaType=${mediaType}`,
-    )
-
     try {
+      const mediaType = resolveMediaType(contentType)
+      const buffer = await filesRepository.getObject(fileId)
+      const imageBase64 = buffer.toString('base64')
+
+      console.info(
+        `[medication-scan] Imagem carregada buffer=${buffer.length}B mediaType=${mediaType}`,
+      )
+
       const result = await extractMedicationFromImage(imageBase64, mediaType)
       console.info(
         `[medication-scan] Fim fileId=${fileId} em ${Date.now() - startedAt}ms → ${JSON.stringify(result)}`,
@@ -89,6 +89,17 @@ export const medicationScanService = {
         `[medication-scan] Fim com erro fileId=${fileId} em ${Date.now() - startedAt}ms: ${err instanceof Error ? err.message : String(err)}`,
       )
       throw err
+    } finally {
+      // Foto de embalagem só existe para a IA — remove do bucket após analisar
+      // (sucesso ou falha). Falha no delete não deve derrubar a resposta do scan.
+      try {
+        await filesRepository.deleteObject(fileId)
+        console.info(`[medication-scan] Arquivo removido do storage fileId=${fileId}`)
+      } catch (deleteErr) {
+        console.error(
+          `[medication-scan] Falha ao remover fileId=${fileId}: ${deleteErr instanceof Error ? deleteErr.message : String(deleteErr)}`,
+        )
+      }
     }
   },
 }

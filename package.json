@@ -20,7 +20,8 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed/index.ts",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "script:soft-delete-user": "tsx scripts/soft-delete-user-by-email.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

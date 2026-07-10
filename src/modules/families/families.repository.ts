@@ -197,22 +197,35 @@ export const familiesRepository = {
   // Soft-delete do FamilyMember é sempre seguro (evita cascatear a exclusão para
   // Medication/Vaccine/Exam/etc.); quando o membro tem login próprio (userId),
   // desativa o User junto e revoga sessões — mesmo padrão de doctors.repository.ts#deactivateTx —
-  // pra liberar o e-mail pra um novo cadastro (ver findUserByEmail/findUserByCpfHash).
+  // e renomeia email/cpfHash pra liberar os @unique (findUserByEmail filtra
+  // deletedAt, mas user.create ainda estoura P2002 se o e-mail original ficar).
   softDeleteMember(id: string, userId: string | null) {
+    const now = new Date()
     if (!userId) {
-      return db.familyMember.update({ where: { id }, data: { deletedAt: new Date() } })
+      return db.familyMember.update({
+        where: { id },
+        data: { deletedAt: now, cpfHash: null },
+      })
     }
-    return db.$transaction([
-      db.familyMember.update({ where: { id }, data: { deletedAt: new Date() } }),
-      db.user.update({
+    return db.$transaction(async (tx) => {
+      await tx.familyMember.update({
+        where: { id },
+        data: { deletedAt: now, cpfHash: null },
+      })
+      await tx.user.update({
         where: { id: userId },
-        data: { deletedAt: new Date(), status: 'INACTIVE' },
-      }),
-      db.refreshToken.updateMany({
+        data: {
+          deletedAt: now,
+          status: 'INACTIVE',
+          email: `deleted+${userId}.${now.getTime()}@deleted.local`,
+          cpfHash: null,
+        },
+      })
+      await tx.refreshToken.updateMany({
         where: { userId, revoked: false },
-        data: { revoked: true, revokedAt: new Date() },
-      }),
-    ])
+        data: { revoked: true, revokedAt: now },
+      })
+    })
   },
 
   upsertHealthProfile(memberId: string, data: UpsertHealthProfileData) {
