@@ -20,6 +20,7 @@ export const CreateClinicSchema = z.object({
   phone: z.string().min(8),
   address: AddressSchema,
   planId: z.string().min(1).optional(),
+  adminName: z.string().min(1),
   adminEmail: z.string().email(),
   adminPassword: z.string().min(8),
   adminPhone: z.string().min(8).optional(),

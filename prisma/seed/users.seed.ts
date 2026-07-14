@@ -37,6 +37,7 @@ export async function seedUsers(db: PrismaClient) {
   const adminUser = await db.user.upsert({
     where: { email: 'admin@medcare.dev' },
     create: {
+      name: 'Gabriel Affonso',
       email: 'admin@medcare.dev',
       passwordHash,
       role: 'PATIENT_ADMIN',
@@ -80,6 +81,7 @@ export async function seedUsers(db: PrismaClient) {
   const memberUser = await db.user.upsert({
     where: { email: 'membro@medcare.dev' },
     create: {
+      name: 'Maria Silva Affonso',
       email: 'membro@medcare.dev',
       passwordHash,
       role: 'FAMILY_MEMBER',
@@ -123,6 +125,7 @@ export async function seedUsers(db: PrismaClient) {
   const caregiverUser = await db.user.upsert({
     where: { email: 'cuidador@medcare.dev' },
     create: {
+      name: 'Joana Cuidadora',
       email: 'cuidador@medcare.dev',
       passwordHash,
       role: 'CAREGIVER',
@@ -150,6 +153,7 @@ export async function seedUsers(db: PrismaClient) {
   const doctorUser = await db.user.upsert({
     where: { email: 'doutor@medcare.dev' },
     create: {
+      name: 'Dr. João Pereira',
       email: 'doutor@medcare.dev',
       passwordHash,
       role: 'DOCTOR',
@@ -191,6 +195,7 @@ export async function seedUsers(db: PrismaClient) {
   const clinicAdminUser = await db.user.upsert({
     where: { email: 'clinica@medcare.dev' },
     create: {
+      name: 'MedCare Clínica Demo',
       email: 'clinica@medcare.dev',
       passwordHash,
       role: 'CLINIC_ADMIN',
@@ -220,6 +225,7 @@ export async function seedUsers(db: PrismaClient) {
   await db.user.upsert({
     where: { email: 'plataforma@medcare.dev' },
     create: {
+      name: 'Admin Plataforma',
       email: 'plataforma@medcare.dev',
       passwordHash,
       role: 'PLATFORM_ADMIN',

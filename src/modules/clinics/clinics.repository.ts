@@ -29,6 +29,7 @@ type CreateClinicWithAdminData = {
   phone: string
   address: Prisma.InputJsonValue
   planId?: string
+  adminName: string
   adminEmail: string
   adminPasswordHash: string
   adminPhone?: string
@@ -83,6 +84,7 @@ export const clinicsRepository = {
 
       const adminUser = await tx.user.create({
         data: omitUndefined({
+          name: input.adminName,
           email: input.adminEmail.toLowerCase(),
           passwordHash: input.adminPasswordHash,
           role: 'CLINIC_ADMIN',

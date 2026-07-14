@@ -76,6 +76,7 @@ export const familiesRepository = {
     return db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: omitUndefined({
+          name: input.displayName,
           email: input.email.toLowerCase(),
           passwordHash: input.passwordHash,
           role: 'PATIENT_ADMIN',
@@ -143,6 +144,7 @@ export const familiesRepository = {
     return db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
+          name: input.displayName,
           email: input.email.toLowerCase(),
           passwordHash: input.passwordHash,
           role: 'FAMILY_MEMBER',

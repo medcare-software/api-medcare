@@ -91,6 +91,7 @@ export const clinicsService = {
       phone: input.phone,
       address: input.address as Prisma.InputJsonValue,
       ...(input.planId !== undefined && { planId: input.planId }),
+      adminName: input.adminName,
       adminEmail: input.adminEmail,
       adminPasswordHash,
       ...(input.adminPhone !== undefined && { adminPhone: input.adminPhone }),
