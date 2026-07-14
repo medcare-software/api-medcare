@@ -5,6 +5,7 @@ import { authenticate } from '../../shared/middlewares/index.js'
 import { decryptField } from '../../shared/security/index.js'
 import type { RefreshTokenPayload } from '../../shared/types/auth.types.js'
 import {
+  ChangePasswordSchema,
   ForgotPasswordSchema,
   LoginSchema,
   LogoutSchema,
@@ -169,5 +170,19 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
     const valid = authService.validateResetSessionToken(fastify, body.data.token)
     return reply.status(200).send({ data: { valid } })
+  })
+
+  // POST /auth/change-password (requer autenticação) — senha atual + nova, revoga todas as sessões
+  fastify.post('/auth/change-password', { preHandler: [authenticate] }, async (req, reply) => {
+    const body = ChangePasswordSchema.safeParse(req.body)
+    if (!body.success) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: body.error.issues,
+      })
+    }
+    await authService.changePassword(req.user.id, body.data.currentPassword, body.data.newPassword)
+    return reply.status(204).send()
   })
 }

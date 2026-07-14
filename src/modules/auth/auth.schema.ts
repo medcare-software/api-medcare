@@ -51,6 +51,12 @@ export const ValidateResetSessionSchema = z.object({
   token: z.string().min(1, { message: 'Token é obrigatório' }),
 })
 
+// Troca de senha por quem já está logado (diferente do fluxo de esqueci-senha).
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, { message: 'Senha atual é obrigatória' }),
+  newPassword: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
+})
+
 export type EmailLoginInput = z.infer<typeof EmailLoginSchema>
 export type IdentifierLoginInput = z.infer<typeof IdentifierLoginSchema>
 export type CrmLoginInput = z.infer<typeof CrmLoginSchema>
@@ -61,3 +67,4 @@ export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>
 export type VerifyResetCodeInput = z.infer<typeof VerifyResetCodeSchema>
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>
 export type ValidateResetSessionInput = z.infer<typeof ValidateResetSessionSchema>
+export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>

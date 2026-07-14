@@ -194,6 +194,29 @@ export const authService = {
       return false
     }
   },
+
+  // Troca de senha por quem já está logado (diferente do fluxo de esqueci-senha,
+  // que não exige saber a senha atual). Mesmo racional do resetPassword: derruba
+  // todas as sessões ativas.
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await authRepository.findUserById(userId)
+    if (!user) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Usuário não encontrado' })
+    }
+
+    const matches = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!matches) {
+      throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Senha atual incorreta' })
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS)
+    await authRepository.updatePassword(userId, passwordHash)
+    await authRepository.revokeAllUserRefreshTokens(userId)
+  },
 }
 
 async function assertCredentials<T extends { passwordHash: string; status: string } | null>(
