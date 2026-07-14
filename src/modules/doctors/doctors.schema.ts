@@ -3,8 +3,9 @@ import { z } from 'zod'
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
 
 export const CreateDoctorSchema = z.object({
+  name: z.string().min(1),
   email: z.string().email({ message: 'E-mail inválido' }),
-  password: z.string().min(8),
+  // password removido — a senha temporária é gerada no servidor e enviada por e-mail
   phone: z.string().min(8).optional(),
   cpf: z.string().min(11),
   crmNumber: z.string().min(1),
@@ -14,6 +15,7 @@ export const CreateDoctorSchema = z.object({
 })
 
 export const UpdateDoctorSchema = z.object({
+  name: z.string().min(1).optional(),
   crmNumber: z.string().min(1).optional(),
   crmState: z.string().length(2).optional(),
   specialties: z.array(z.string().min(1)).min(1).optional(),

@@ -9,6 +9,7 @@ import {
   encryptField,
   hashForLookup,
   maskCnpj,
+  maskCpf,
   onlyDigits,
   recordSensitiveAccess,
 } from '../../shared/security/index.js'
@@ -203,7 +204,21 @@ export const clinicsService = {
 
   async listDoctors(user: AuthUser, clinicId: string, query: ListClinicDoctorsQuery) {
     const scopedClinicId = await resolveScopedClinicId(user, clinicId)
-    return clinicsRepository.findDoctorLinks(scopedClinicId, query.includeInactive ?? false)
+    const links = await clinicsRepository.findDoctorLinks(
+      scopedClinicId,
+      query.includeInactive ?? false,
+    )
+    // CLINIC_ADMIN não é dono do CPF do médico — mesma máscara de doctorsService (nunca full-reveal aqui).
+    return links.map((link) => {
+      const { cpfEncrypted, ...userRest } = link.doctor.user
+      return {
+        ...link,
+        doctor: {
+          ...link.doctor,
+          user: { ...userRest, cpf: cpfEncrypted ? maskCpf(decryptField(cpfEncrypted)) : null },
+        },
+      }
+    })
   },
 
   async linkDoctor(user: AuthUser, clinicId: string, input: LinkDoctorInput) {

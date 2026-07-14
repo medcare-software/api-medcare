@@ -26,6 +26,20 @@ export function familyMemberActivationLinkTemplate(link: string, memberName: str
   }
 }
 
+export function doctorWelcomeTemplate(name: string, temporaryPassword: string) {
+  return {
+    subject: 'Bem-vindo ao Medcare — defina seu acesso',
+    text: `Olá, ${name}! Você foi cadastrado no Medcare. Sua senha temporária é ${temporaryPassword}. Faça login e altere sua senha o quanto antes.`,
+    html: `
+      <p>Olá, ${name}!</p>
+      <p>Você foi cadastrado no Medcare.</p>
+      <p>Sua senha temporária é:</p>
+      <p style="font-size:22px;font-weight:bold;">${temporaryPassword}</p>
+      <p>Faça login e altere sua senha assim que possível.</p>
+    `,
+  }
+}
+
 export function caregiverInviteCodeTemplate(code: string, ttlMinutes: number, familyName: string) {
   return {
     subject: 'Convite para acompanhar uma família — Medcare',

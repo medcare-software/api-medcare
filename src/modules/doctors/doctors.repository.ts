@@ -3,10 +3,12 @@ import type { UserStatus } from '@prisma/client'
 import { db } from '../../config/database.js'
 import { omitUndefined } from '../../shared/utils/index.js'
 
-// Nunca inclui cpfEncrypted/cpfHash/passwordHash do User vinculado — este módulo
-// não decripta CPF, então nem sequer busca esses campos.
+// cpfEncrypted é buscado aqui só para a service mascarar (maskCpf) na saída —
+// nunca retornado em texto plano para CLINIC_ADMIN/PLATFORM_ADMIN neste módulo.
 const doctorInclude = {
-  user: { select: { id: true, email: true, phone: true, status: true } },
+  user: {
+    select: { id: true, name: true, email: true, phone: true, status: true, cpfEncrypted: true },
+  },
 } as const
 
 type DoctorListFilters = {
@@ -24,6 +26,7 @@ type DoctorUpdateData = {
 }
 
 type CreateDoctorWithUserData = {
+  name: string
   email: string
   passwordHash: string
   phone?: string
@@ -89,6 +92,7 @@ export const doctorsRepository = {
     return db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: omitUndefined({
+          name: input.name,
           email: input.email.toLowerCase(),
           passwordHash: input.passwordHash,
           role: 'DOCTOR',
@@ -119,6 +123,10 @@ export const doctorsRepository = {
 
   updateUserPhone(userId: string, phone: string) {
     return db.user.update({ where: { id: userId }, data: { phone } })
+  },
+
+  updateUserName(userId: string, name: string) {
+    return db.user.update({ where: { id: userId }, data: { name } })
   },
 
   deactivateTx(doctorId: string, userId: string) {

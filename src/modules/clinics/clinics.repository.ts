@@ -119,7 +119,20 @@ export const clinicsRepository = {
     return db.clinicDoctorLink.findMany({
       where: { clinicId, ...(includeInactive ? {} : { active: true }) },
       include: {
-        doctor: { include: { user: { select: { id: true, email: true, phone: true } } } },
+        doctor: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                status: true,
+                cpfEncrypted: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { linkedAt: 'desc' },
     })

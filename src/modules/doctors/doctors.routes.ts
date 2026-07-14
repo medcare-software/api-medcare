@@ -10,10 +10,11 @@ import {
 import { doctorsService } from './doctors.service.js'
 
 export default async function doctorsRoutes(fastify: FastifyInstance) {
-  // POST /doctors — cadastra médico + User(role=DOCTOR)
+  // POST /doctors — cadastra médico + User(role=DOCTOR). CLINIC_ADMIN pode
+  // cadastrar médico próprio (senha temporária gerada no servidor, enviada por e-mail).
   fastify.post(
     '/doctors',
-    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN', 'CLINIC_ADMIN')] },
     async (req, reply) => {
       const body = CreateDoctorSchema.safeParse(req.body)
       if (!body.success) {
@@ -85,10 +86,10 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // PATCH /doctors/:id
+  // PATCH /doctors/:id — CLINIC_ADMIN só edita médico vinculado à própria clínica
   fastify.patch(
     '/doctors/:id',
-    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN', 'CLINIC_ADMIN')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const body = UpdateDoctorSchema.safeParse(req.body)
@@ -99,7 +100,7 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const doctor = await doctorsService.update(id, body.data)
+      const doctor = await doctorsService.update(req.user, id, body.data)
       return reply.status(200).send({ data: doctor })
     },
   )

@@ -1,9 +1,18 @@
+import crypto from 'node:crypto'
+
 import bcrypt from 'bcryptjs'
 
 import { env } from '../../config/env.js'
 import { resolveClinicId, resolveDoctorId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
-import { encryptField, hashForLookup, onlyDigits } from '../../shared/security/index.js'
+import { doctorWelcomeTemplate, sendMail } from '../../shared/mail/index.js'
+import {
+  decryptField,
+  encryptField,
+  hashForLookup,
+  maskCpf,
+  onlyDigits,
+} from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { omitUndefined } from '../../shared/utils/index.js'
 import { doctorsRepository } from './doctors.repository.js'
@@ -13,6 +22,31 @@ import type {
   UpdateDoctorInput,
   UpdateDoctorSelfInput,
 } from './doctors.schema.js'
+
+// Gera uma senha temporária forte (nunca vem do client) — garante ao menos 1
+// maiúscula/1 dígito/1 símbolo pra já nascer válida contra a política de senha do front.
+function generateTemporaryPassword(): string {
+  return `${crypto.randomBytes(10).toString('base64url')}A1!`
+}
+
+interface DoctorUserView {
+  id: string
+  name: string
+  email: string
+  phone: string | null
+  status: string
+  cpfEncrypted: Uint8Array | null
+}
+
+// CLINIC_ADMIN/PLATFORM_ADMIN nunca são donos do CPF do médico — a API só
+// retorna a versão mascarada (mesmo padrão de maskClinic em clinics.service.ts).
+function maskDoctorForViewer<T extends { user: DoctorUserView }>(doctor: T) {
+  const { cpfEncrypted, ...userRest } = doctor.user
+  return {
+    ...doctor,
+    user: { ...userRest, cpf: cpfEncrypted ? maskCpf(decryptField(cpfEncrypted)) : null },
+  }
+}
 
 export const doctorsService = {
   async create(input: CreateDoctorInput) {
@@ -27,10 +61,12 @@ export const doctorsService = {
       throw new AppError({ code: 'CONFLICT', message: 'CRM já cadastrado' })
     }
 
-    const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_ROUNDS)
+    const temporaryPassword = generateTemporaryPassword()
+    const passwordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
     const cpfDigits = onlyDigits(input.cpf)
 
-    return doctorsRepository.createWithUser({
+    const doctor = await doctorsRepository.createWithUser({
+      name: input.name,
       email: input.email,
       passwordHash,
       ...(input.phone !== undefined && { phone: input.phone }),
@@ -41,6 +77,16 @@ export const doctorsService = {
       specialties: input.specialties,
       ...(input.planId !== undefined && { planId: input.planId }),
     })
+
+    try {
+      const template = doctorWelcomeTemplate(input.name, temporaryPassword)
+      await sendMail({ to: input.email, ...template })
+    } catch (err) {
+      // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
+      console.error(`[doctors] Falha ao enviar e-mail de boas-vindas para ${input.email}`, err)
+    }
+
+    return maskDoctorForViewer(doctor)
   },
 
   async list(user: AuthUser, query: ListDoctorsQuery) {
@@ -48,10 +94,11 @@ export const doctorsService = {
 
     if (user.role === 'CLINIC_ADMIN') {
       const clinicId = await resolveClinicId(user.id)
-      return doctorsRepository.findManyLinkedToClinic(clinicId, pagination)
+      const doctors = await doctorsRepository.findManyLinkedToClinic(clinicId, pagination)
+      return doctors.map(maskDoctorForViewer)
     }
 
-    return doctorsRepository.findMany(
+    const doctors = await doctorsRepository.findMany(
       {
         ...(query.status && { status: query.status }),
         ...(query.specialty && { specialty: query.specialty }),
@@ -59,6 +106,7 @@ export const doctorsService = {
       },
       pagination,
     )
+    return doctors.map(maskDoctorForViewer)
   },
 
   async getById(user: AuthUser, id: string) {
@@ -68,14 +116,14 @@ export const doctorsService = {
       if (!doctor) {
         throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
       }
-      return doctor
+      return maskDoctorForViewer(doctor)
     }
 
     const doctor = await doctorsRepository.findById(id)
     if (!doctor) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
     }
-    return doctor
+    return maskDoctorForViewer(doctor)
   },
 
   async getSelf(user: AuthUser) {
@@ -84,11 +132,14 @@ export const doctorsService = {
     if (!doctor) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
     }
-    return doctor
+    return maskDoctorForViewer(doctor)
   },
 
-  async update(id: string, input: UpdateDoctorInput) {
-    const doctor = await doctorsRepository.findById(id)
+  async update(user: AuthUser, id: string, input: UpdateDoctorInput) {
+    const doctor =
+      user.role === 'CLINIC_ADMIN'
+        ? await doctorsRepository.findLinkedToClinic(id, await resolveClinicId(user.id))
+        : await doctorsRepository.findById(id)
     if (!doctor) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
     }
@@ -102,18 +153,22 @@ export const doctorsService = {
       }
     }
 
-    const { phone, ...doctorFields } = input
+    const { phone, name, ...doctorFields } = input
     if (phone !== undefined) {
       await doctorsRepository.updateUserPhone(doctor.userId, phone)
     }
+    if (name !== undefined) {
+      await doctorsRepository.updateUserName(doctor.userId, name)
+    }
 
-    return doctorsRepository.update(
+    const updated = await doctorsRepository.update(
       id,
       omitUndefined({
         ...doctorFields,
         ...(input.crmState && { crmState: input.crmState.toUpperCase() }),
       }),
     )
+    return maskDoctorForViewer(updated)
   },
 
   async updateSelf(user: AuthUser, input: UpdateDoctorSelfInput) {
@@ -124,7 +179,8 @@ export const doctorsService = {
     }
 
     const { phone, ...doctorFields } = input
-    return doctorsRepository.update(doctorId, omitUndefined(doctorFields))
+    const updated = await doctorsRepository.update(doctorId, omitUndefined(doctorFields))
+    return maskDoctorForViewer(updated)
   },
 
   async deactivate(id: string) {
