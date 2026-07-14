@@ -1,7 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 
 import { authenticate } from '../../shared/middlewares/index.js'
-import { RegisterPushTokenSchema, UpsertNotificationPreferenceSchema } from './notifications.schema.js'
+import {
+  RegisterPushTokenSchema,
+  UpsertNotificationPreferenceSchema,
+} from './notifications.schema.js'
 import { notificationsService } from './notifications.service.js'
 
 export default async function notificationsRoutes(fastify: FastifyInstance) {

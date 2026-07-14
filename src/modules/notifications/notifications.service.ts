@@ -1,7 +1,10 @@
 import { AppError } from '../../shared/errors/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { notificationsRepository } from './notifications.repository.js'
-import type { RegisterPushTokenInput, UpsertNotificationPreferenceInput } from './notifications.schema.js'
+import type {
+  RegisterPushTokenInput,
+  UpsertNotificationPreferenceInput,
+} from './notifications.schema.js'
 
 export const notificationsService = {
   async list(user: AuthUser) {

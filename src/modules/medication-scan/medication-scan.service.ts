@@ -41,15 +41,13 @@ function resolveMediaType(contentType: string | undefined): SupportedMediaType {
   if (UNSUPPORTED_MEDIA_TYPES.has(normalized)) {
     throw new AppError({
       code: 'INVALID_INPUT',
-      message:
-        'Formato de imagem não suportado. Tire a foto novamente em JPEG ou PNG.',
+      message: 'Formato de imagem não suportado. Tire a foto novamente em JPEG ou PNG.',
     })
   }
 
   throw new AppError({
     code: 'INVALID_INPUT',
-    message:
-      'Formato de imagem não suportado. Use JPEG, PNG ou WebP e tente novamente.',
+    message: 'Formato de imagem não suportado. Use JPEG, PNG ou WebP e tente novamente.',
   })
 }
 

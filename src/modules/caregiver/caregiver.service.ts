@@ -86,15 +86,15 @@ export const caregiverService = {
     }
 
     const existingAccess = await caregiverRepository.findCaregiverAccess(user.id, invite.familyId)
-    await caregiverRepository.activateCaregiverAccess(
-      user.id,
-      invite.familyId,
-      existingAccess?.id,
-    )
+    await caregiverRepository.activateCaregiverAccess(user.id, invite.familyId, existingAccess?.id)
     const redeemed = await caregiverRepository.markInviteRedeemed(invite.id)
 
     const family = await caregiverRepository.findFamilyById(invite.familyId)
-    return { familyId: invite.familyId, familyName: family?.name ?? '', expiresAt: redeemed.expiresAt }
+    return {
+      familyId: invite.familyId,
+      familyName: family?.name ?? '',
+      expiresAt: redeemed.expiresAt,
+    }
   },
 
   async listMyFamilies(user: AuthUser) {

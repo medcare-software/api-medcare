@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
-import { caregiverService } from './caregiver.service.js'
 import { CreateCaregiverInviteSchema, RedeemCaregiverInviteSchema } from './caregiver.schema.js'
+import { caregiverService } from './caregiver.service.js'
 
 export default async function caregiverRoutes(fastify: FastifyInstance) {
   // POST /families/:familyId/caregiver-invites — admin familiar convida por e-mail
