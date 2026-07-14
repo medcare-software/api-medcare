@@ -68,6 +68,23 @@ export const medicalAccessService = {
     const doctorId = isDoctor ? await resolveDoctorId(user.id) : undefined
     const clinicId = isDoctor ? undefined : await resolveClinicId(user.id)
 
+    // Clínica pode, no ato do resgate, já atribuir um médico interno responsável —
+    // precisa estar vinculado e ativo à própria clínica. Isso já concede acesso real
+    // a esse médico via o mesmo grant (ver assertActiveMedicalAccessGrant, branch DOCTOR).
+    let assignedDoctorId: string | undefined
+    if (!isDoctor && input.doctorId) {
+      const link = await db.clinicDoctorLink.findUnique({
+        where: { clinicId_doctorId: { clinicId: clinicId as string, doctorId: input.doctorId } },
+      })
+      if (!link?.active) {
+        throw new AppError({
+          code: 'VALIDATION_ERROR',
+          message: 'Médico não vinculado a esta clínica',
+        })
+      }
+      assignedDoctorId = input.doctorId
+    }
+
     // expiresAt tem significado duplo neste model: até aqui era o prazo de resgate
     // do código; a partir daqui vira o prazo do acesso clínico em si.
     const temporaryDays = grant.temporaryDays ?? env.MEDICAL_ACCESS_TEMPORARY_GRANT_DAYS
@@ -78,6 +95,7 @@ export const medicalAccessService = {
 
     const activated = await medicalAccessRepository.activate(grant.id, {
       ...(doctorId !== undefined && { doctorId }),
+      ...(assignedDoctorId !== undefined && { doctorId: assignedDoctorId }),
       ...(clinicId !== undefined && { clinicId }),
       grantedAt: new Date(),
       expiresAt: newExpiresAt,

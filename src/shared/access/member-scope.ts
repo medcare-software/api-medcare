@@ -164,5 +164,12 @@ export async function assertActiveMedicalAccessGrant(params: {
     })
   }
 
+  // "Última visita" na tela de acessos da clínica vem daqui — único ponto de
+  // gate para todo módulo clínico (medications/vaccines/exams/diagnostics/procedures/files).
+  await db.medicalAccessGrant.update({
+    where: { id: grant.id },
+    data: { lastAccessedAt: new Date() },
+  })
+
   return { grantId: grant.id }
 }

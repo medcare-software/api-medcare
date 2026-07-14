@@ -50,9 +50,11 @@ export const medicalAccessRepository = {
     })
   },
 
+  // Sem filtro de status: a clínica/médico também precisa ver grants expirados/
+  // revogados na própria listagem (coluna "Status" e KPIs da tela de acessos).
   findManyHeldByDoctor(doctorId: string) {
     return db.medicalAccessGrant.findMany({
-      where: { doctorId, status: 'ACTIVE' },
+      where: { doctorId },
       include: { member: { select: { id: true, displayName: true } } },
       orderBy: { grantedAt: 'desc' },
     })
@@ -60,7 +62,7 @@ export const medicalAccessRepository = {
 
   findManyHeldByClinic(clinicId: string) {
     return db.medicalAccessGrant.findMany({
-      where: { clinicId, status: 'ACTIVE' },
+      where: { clinicId },
       include: { member: { select: { id: true, displayName: true } } },
       orderBy: { grantedAt: 'desc' },
     })

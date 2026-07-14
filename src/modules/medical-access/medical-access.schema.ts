@@ -16,6 +16,9 @@ export const CreateGrantSchema = z
 
 export const RedeemGrantSchema = z.object({
   code: z.string().regex(/^\d{6,8}$/, 'Código deve ter 6 a 8 dígitos'),
+  // Só usado quando quem resgata é CLINIC_ADMIN — atribui um médico interno
+  // responsável, que passa a ter acesso real ao prontuário (ver medical-access.service.ts).
+  doctorId: z.string().min(1).optional(),
 })
 
 export type CreateGrantInput = z.infer<typeof CreateGrantSchema>
