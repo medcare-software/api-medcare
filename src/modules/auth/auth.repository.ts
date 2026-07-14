@@ -22,6 +22,17 @@ export const authRepository = {
     })
   },
 
+  // Login da clínica por CNPJ (web-medcare) — Clinic guarda o cnpjHash, não User/
+  // ClinicAdminProfile, então a resolução passa por Clinic → ClinicAdminProfile → User.
+  async findClinicAdminByCnpjHash(cnpjHash: string) {
+    const clinic = await db.clinic.findFirst({ where: { cnpjHash, deletedAt: null } })
+    if (!clinic) return null
+    return db.user.findFirst({
+      where: { deletedAt: null, clinicAdminProfile: { clinicId: clinic.id } },
+      include: { doctor: true },
+    })
+  },
+
   async findUserById(id: string) {
     return db.user.findFirst({
       where: { id, deletedAt: null },

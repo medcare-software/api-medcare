@@ -37,12 +37,16 @@ export const authService = {
     return assertCredentials(user, input.password)
   },
 
-  // app-medcare — um único campo aceita CPF ou e-mail; decide pelo formato do valor.
+  // app-medcare (CPF ou e-mail) e clínica/web-medcare (e-mail ou CNPJ) num único
+  // campo — decide pelo formato do valor (CPF tem 11 dígitos, CNPJ tem 14).
   async validateIdentifierLogin(input: IdentifierLoginInput) {
     const isEmail = input.identifier.includes('@')
+    const digits = onlyDigits(input.identifier)
     const user = isEmail
       ? await authRepository.findUserByEmail(input.identifier)
-      : await authRepository.findUserByCpfHash(hashForLookup(onlyDigits(input.identifier)))
+      : digits.length === 14
+        ? await authRepository.findClinicAdminByCnpjHash(hashForLookup(digits))
+        : await authRepository.findUserByCpfHash(hashForLookup(digits))
     return assertCredentials(user, input.password)
   },
 
