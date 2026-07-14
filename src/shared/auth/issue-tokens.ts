@@ -9,7 +9,7 @@ import type { JwtPayload, RefreshTokenPayload } from '../types/auth.types.js'
 export async function issueTokens(
   fastify: FastifyInstance,
   user: { id: string; role: Role },
-  options?: { audience?: 'web' },
+  options?: { audience?: 'web'; deviceLabel?: string },
 ): Promise<{ accessToken: string; refreshToken: string }> {
   const jti = nanoid()
 
@@ -28,7 +28,7 @@ export async function issueTokens(
   const accessToken = fastify.jwt.sign(accessPayload, { expiresIn: env.JWT_ACCESS_EXPIRES_IN })
   const refreshToken = fastify.jwt.sign(refreshPayload, { expiresIn: env.JWT_REFRESH_EXPIRES_IN })
 
-  await authService.storeRefreshToken(user.id, jti, refreshToken)
+  await authService.storeRefreshToken(user.id, jti, refreshToken, options?.deviceLabel)
 
   return { accessToken, refreshToken }
 }

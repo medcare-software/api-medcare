@@ -31,6 +31,7 @@ export class AppError extends Error {
       TOKEN_EXPIRED: 401,
       TOKEN_INVALID: 401,
       TOKEN_REVOKED: 401,
+      SESSION_LIMIT_REACHED: 409,
       FORBIDDEN: 403,
       MEDICAL_ACCESS_REQUIRED: 403,
       NOT_FOUND: 404,

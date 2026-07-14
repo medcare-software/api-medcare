@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 
+import type { Role } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import type { FastifyInstance } from 'fastify'
 
@@ -57,10 +58,30 @@ export const authService = {
 
   // ── Sessão / Refresh Token ─────────────────────────────────────────────────
 
-  async storeRefreshToken(userId: string, jti: string, refreshToken: string) {
+  async storeRefreshToken(userId: string, jti: string, refreshToken: string, deviceLabel?: string) {
     const expiresAt = new Date(Date.now() + parseDurationToMs(env.JWT_REFRESH_EXPIRES_IN))
     const tokenHash = hashForLookup(refreshToken)
-    await authRepository.createRefreshToken({ userId, jti, tokenHash, expiresAt })
+    await authRepository.createRefreshToken({
+      userId,
+      jti,
+      tokenHash,
+      expiresAt,
+      ...(deviceLabel !== undefined && { deviceLabel }),
+    })
+  },
+
+  // Limite de 2 sessões simultâneas só pra login de médico (ver plano de
+  // "Sessões ativas" — clínica/família não são afetados por essa regra).
+  async assertSessionCapacity(userId: string, role: Role) {
+    if (role !== 'DOCTOR') return
+    const activeCount = await authRepository.countActiveRefreshTokens(userId)
+    if (activeCount >= 2) {
+      throw new AppError({
+        code: 'SESSION_LIMIT_REACHED',
+        message:
+          'Limite de 2 sessões simultâneas atingido. Encerre uma sessão existente para continuar.',
+      })
+    }
   },
 
   async validateAndRotateSession(jti: string) {

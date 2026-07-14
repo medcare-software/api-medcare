@@ -105,6 +105,39 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
     },
   )
 
+  // GET /doctors/:id/sessions — sessões ativas por dispositivo (aba Atividade)
+  fastify.get(
+    '/doctors/:id/sessions',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN', 'CLINIC_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const sessions = await doctorsService.listSessions(req.user, id)
+      return reply.status(200).send({ data: sessions })
+    },
+  )
+
+  // DELETE /doctors/:id/sessions/:sessionId — encerra a sessão de um dispositivo específico
+  fastify.delete(
+    '/doctors/:id/sessions/:sessionId',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN', 'CLINIC_ADMIN')] },
+    async (req, reply) => {
+      const { id, sessionId } = req.params as { id: string; sessionId: string }
+      await doctorsService.revokeSession(req.user, id, sessionId)
+      return reply.status(204).send()
+    },
+  )
+
+  // GET /doctors/:id/usage-summary — pacientes vinculados, exames e diagnósticos enviados
+  fastify.get(
+    '/doctors/:id/usage-summary',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN', 'CLINIC_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const summary = await doctorsService.getUsageSummary(req.user, id)
+      return reply.status(200).send({ data: summary })
+    },
+  )
+
   // DELETE /doctors/:id — soft delete (Doctor + User), revoga sessões
   fastify.delete(
     '/doctors/:id',

@@ -48,6 +48,19 @@ function maskDoctorForViewer<T extends { user: DoctorUserView }>(doctor: T) {
   }
 }
 
+// CLINIC_ADMIN só enxerga médico vinculado à própria clínica; PLATFORM_ADMIN sem restrição.
+// Extraído porque getById/update/listSessions/revokeSession/getUsageSummary repetem essa checagem.
+async function resolveScopedDoctor(user: AuthUser, id: string) {
+  const doctor =
+    user.role === 'CLINIC_ADMIN'
+      ? await doctorsRepository.findLinkedToClinic(id, await resolveClinicId(user.id))
+      : await doctorsRepository.findById(id)
+  if (!doctor) {
+    throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
+  }
+  return doctor
+}
+
 export const doctorsService = {
   async create(input: CreateDoctorInput) {
     const existingUser = await doctorsRepository.findUserByEmail(input.email)
@@ -110,19 +123,7 @@ export const doctorsService = {
   },
 
   async getById(user: AuthUser, id: string) {
-    if (user.role === 'CLINIC_ADMIN') {
-      const clinicId = await resolveClinicId(user.id)
-      const doctor = await doctorsRepository.findLinkedToClinic(id, clinicId)
-      if (!doctor) {
-        throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
-      }
-      return maskDoctorForViewer(doctor)
-    }
-
-    const doctor = await doctorsRepository.findById(id)
-    if (!doctor) {
-      throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
-    }
+    const doctor = await resolveScopedDoctor(user, id)
     return maskDoctorForViewer(doctor)
   },
 
@@ -136,13 +137,7 @@ export const doctorsService = {
   },
 
   async update(user: AuthUser, id: string, input: UpdateDoctorInput) {
-    const doctor =
-      user.role === 'CLINIC_ADMIN'
-        ? await doctorsRepository.findLinkedToClinic(id, await resolveClinicId(user.id))
-        : await doctorsRepository.findById(id)
-    if (!doctor) {
-      throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
-    }
+    const doctor = await resolveScopedDoctor(user, id)
 
     if (input.crmNumber || input.crmState) {
       const crmNumber = input.crmNumber ?? doctor.crmNumber
@@ -189,5 +184,32 @@ export const doctorsService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
     }
     await doctorsRepository.deactivateTx(doctor.id, doctor.userId)
+  },
+
+  // ── Aba "Atividade" (visão da clínica) ──────────────────────────────────────
+
+  async listSessions(user: AuthUser, id: string) {
+    const doctor = await resolveScopedDoctor(user, id)
+    const sessions = await doctorsRepository.findActiveSessionsByUserId(doctor.userId)
+    return sessions.map((session) => ({
+      id: session.id,
+      deviceLabel: session.deviceLabel ?? 'Dispositivo desconhecido',
+      createdAt: session.createdAt,
+    }))
+  },
+
+  async revokeSession(user: AuthUser, id: string, sessionId: string) {
+    const doctor = await resolveScopedDoctor(user, id)
+    await doctorsRepository.revokeSessionById(sessionId, doctor.userId)
+  },
+
+  async getUsageSummary(user: AuthUser, id: string) {
+    const doctor = await resolveScopedDoctor(user, id)
+    const [linkedPatients, examsSent, diagnosticsSent] = await Promise.all([
+      doctorsRepository.countLinkedPatients(doctor.id),
+      doctorsRepository.countExamsByDoctor(doctor.id),
+      doctorsRepository.countDiagnosticsByDoctor(doctor.id),
+    ])
+    return { linkedPatients, examsSent, diagnosticsSent }
   },
 }

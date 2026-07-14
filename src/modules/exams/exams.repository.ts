@@ -20,7 +20,7 @@ export const examsRepository = {
     return db.exam.findUnique({ where: { id } })
   },
 
-  create(memberId: string, input: Omit<CreateExamInput, 'memberId'>) {
+  create(memberId: string, input: Omit<CreateExamInput, 'memberId'> & { doctorId?: string }) {
     return db.exam.create({ data: { memberId, ...omitUndefined(input) } })
   },
 

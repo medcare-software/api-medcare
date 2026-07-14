@@ -129,6 +129,34 @@ export const doctorsRepository = {
     return db.user.update({ where: { id: userId }, data: { name } })
   },
 
+  // Sessões ativas por dispositivo (aba Atividade) — não revogadas e não expiradas.
+  findActiveSessionsByUserId(userId: string) {
+    return db.refreshToken.findMany({
+      where: { userId, revoked: false, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'asc' },
+    })
+  },
+
+  // Escopado por userId — evita encerrar sessão de outro usuário adivinhando um id.
+  revokeSessionById(id: string, userId: string) {
+    return db.refreshToken.updateMany({
+      where: { id, userId, revoked: false },
+      data: { revoked: true, revokedAt: new Date() },
+    })
+  },
+
+  countLinkedPatients(doctorId: string) {
+    return db.medicalAccessGrant.count({ where: { doctorId, status: 'ACTIVE' } })
+  },
+
+  countExamsByDoctor(doctorId: string) {
+    return db.exam.count({ where: { doctorId } })
+  },
+
+  countDiagnosticsByDoctor(doctorId: string) {
+    return db.diagnostic.count({ where: { doctorId } })
+  },
+
   deactivateTx(doctorId: string, userId: string) {
     return db.$transaction([
       db.doctor.update({

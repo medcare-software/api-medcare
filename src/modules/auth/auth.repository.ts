@@ -50,12 +50,20 @@ export const authRepository = {
     jti: string
     tokenHash: string
     expiresAt: Date
+    deviceLabel?: string
   }) {
     return db.refreshToken.create({ data })
   },
 
   async findRefreshTokenByJti(jti: string) {
     return db.refreshToken.findUnique({ where: { jti } })
+  },
+
+  // Usado pelo limite de 2 sessões simultâneas (só médico, ver assertSessionCapacity).
+  async countActiveRefreshTokens(userId: string) {
+    return db.refreshToken.count({
+      where: { userId, revoked: false, expiresAt: { gt: new Date() } },
+    })
   },
 
   async revokeRefreshToken(jti: string) {

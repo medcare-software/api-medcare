@@ -9,6 +9,7 @@ export const ErrorCode = {
   TOKEN_EXPIRED: 'TOKEN_EXPIRED',
   TOKEN_INVALID: 'TOKEN_INVALID',
   TOKEN_REVOKED: 'TOKEN_REVOKED',
+  SESSION_LIMIT_REACHED: 'SESSION_LIMIT_REACHED',
 
   // ── Recursos ──────────────────────────────────────────
   NOT_FOUND: 'NOT_FOUND',

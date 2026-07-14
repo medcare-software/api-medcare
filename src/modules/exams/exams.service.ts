@@ -3,6 +3,7 @@ import {
   assertClinicalReadAccess,
   assertOwnScopedMemberInScope,
   isFamilyRole,
+  resolveDoctorId,
   resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
@@ -29,9 +30,14 @@ export const examsService = {
     await assertExamWriteAccess(user, input.memberId)
     const { memberId, ...data } = input
     // Exame registrado pelo médico é sempre marcado como origem DOCTOR,
-    // independente do que o client tenha enviado.
+    // independente do que o client tenha enviado. doctorId fica registrado pra
+    // contar "exames enviados" na aba Atividade (ver doctors.service.ts).
     const source = user.role === 'DOCTOR' ? 'DOCTOR' : data.source
-    const exam = await examsRepository.create(memberId, { ...data, source })
+    const exam = await examsRepository.create(memberId, {
+      ...data,
+      source,
+      ...(user.role === 'DOCTOR' && { doctorId: await resolveDoctorId(user.id) }),
+    })
 
     // CAREGIVER conta como papel de família aqui (ver isFamilyRole) — só DOCTOR é
     // um terceiro de verdade "enviando" algo pra família.

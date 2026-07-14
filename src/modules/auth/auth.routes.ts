@@ -4,6 +4,7 @@ import { issueTokens } from '../../shared/auth/issue-tokens.js'
 import { authenticate } from '../../shared/middlewares/index.js'
 import { decryptField } from '../../shared/security/index.js'
 import type { RefreshTokenPayload } from '../../shared/types/auth.types.js'
+import { getDeviceLabel } from '../../shared/utils/index.js'
 import {
   ChangePasswordSchema,
   ForgotPasswordSchema,
@@ -35,7 +36,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
           ? await authService.validateEmailLogin(body.data)
           : await authService.validateCrmLogin(body.data)
 
-    const tokens = await issueTokens(fastify, { id: user.id, role: user.role })
+    await authService.assertSessionCapacity(user.id, user.role)
+
+    const deviceLabel = getDeviceLabel(req.headers['user-agent'])
+    const tokens = await issueTokens(fastify, { id: user.id, role: user.role }, { deviceLabel })
 
     return reply.status(200).send({
       data: {
@@ -64,7 +68,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
 
     const user = await authService.validateAndRotateSession(payload.jti)
-    const tokens = await issueTokens(fastify, { id: user.id, role: user.role })
+    // Preserva o rótulo do dispositivo na rotação (mesma sessão física, só o token muda).
+    const deviceLabel = getDeviceLabel(req.headers['user-agent'])
+    const tokens = await issueTokens(fastify, { id: user.id, role: user.role }, { deviceLabel })
 
     return reply.status(200).send({ data: tokens })
   })

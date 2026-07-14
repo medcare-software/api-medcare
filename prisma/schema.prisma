@@ -169,14 +169,15 @@ model User {
 }
 
 model RefreshToken {
-  id        String    @id @default(cuid())
-  userId    String
-  jti       String    @unique
-  tokenHash String
-  revoked   Boolean   @default(false)
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
-  revokedAt DateTime?
+  id          String    @id @default(cuid())
+  userId      String
+  jti         String    @unique
+  tokenHash   String
+  deviceLabel String? // rótulo aproximado do dispositivo (SO · navegador), derivado do User-Agent no login
+  revoked     Boolean   @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -359,6 +360,7 @@ model VaccineDose {
 model Exam {
   id        String     @id @default(cuid())
   memberId  String
+  doctorId  String? // autor quando enviado por um médico (source=DOCTOR) — nulo em registros antigos/manuais
   name      String
   examDate  DateTime
   fileId    String? // referência a objeto no storage (MinIO)
@@ -366,8 +368,10 @@ model Exam {
   createdAt DateTime   @default(now())
 
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor  Doctor?      @relation(fields: [doctorId], references: [id])
 
   @@index([memberId])
+  @@index([doctorId])
   @@map("exams")
 }
 
