@@ -244,6 +244,7 @@ model FamilyMember {
   exams         Exam[]
   diagnostics   Diagnostic[]
   procedures    Procedure[]
+  prescriptions Prescription[]
   accessGrants  MedicalAccessGrant[]
 
   @@index([familyId])
@@ -385,11 +386,57 @@ model Diagnostic {
   diagnosedAt          DateTime
   createdAt            DateTime @default(now())
 
-  member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  doctor Doctor?      @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  member        FamilyMember   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor        Doctor?        @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  prescriptions Prescription[]
 
   @@index([memberId])
   @@map("diagnostics")
+}
+
+enum PrescriptionValidity {
+  DAYS_30
+  DAYS_60
+  DAYS_90
+  CONTINUOUS_USE
+}
+
+model Prescription {
+  id                           String               @id @default(cuid())
+  memberId                     String
+  doctorId                     String?
+  linkedDiagnosticId           String?
+  issueDate                    DateTime
+  validity                     PrescriptionValidity
+  // Observação livre do médico pro receituário como um todo — texto clínico, sempre cifrado.
+  generalInstructionsEncrypted Bytes?
+  createdAt                    DateTime             @default(now())
+
+  member           FamilyMember       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor           Doctor?            @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  linkedDiagnostic Diagnostic?        @relation(fields: [linkedDiagnosticId], references: [id], onDelete: SetNull)
+  items            PrescriptionItem[]
+
+  @@index([memberId])
+  @@index([doctorId])
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id             String @id @default(cuid())
+  prescriptionId String
+  name           String
+  dosage         String
+  posology       String
+  duration       String
+  // Instruções específicas do item (ex.: "tomar em jejum") — texto clínico, sempre cifrado.
+  instructionsEncrypted Bytes?
+  stripeColor    MedicationStripeColor @default(NONE)
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId])
+  @@map("prescription_items")
 }
 
 model Procedure {
@@ -504,6 +551,8 @@ model Doctor {
   diagnostics   Diagnostic[]
   procedures    Procedure[]
   subscriptions Subscription[]
+  exams         Exam[]
+  prescriptions Prescription[]
 
   @@unique([crmNumber, crmState])
   @@index([status])

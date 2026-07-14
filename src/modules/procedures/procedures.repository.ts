@@ -16,9 +16,17 @@ interface UpdateProcedureData {
   performedAt?: Date
 }
 
+// Doctor não tem campo de nome hoje — expõe o CRM como identificador do médico
+// autor, mesmo padrão já usado em diagnostics.repository.ts.
+const DOCTOR_SELECT = { select: { crmNumber: true, crmState: true } }
+
 export const proceduresRepository = {
   findManyByMemberId(memberId: string) {
-    return db.procedure.findMany({ where: { memberId }, orderBy: { performedAt: 'desc' } })
+    return db.procedure.findMany({
+      where: { memberId },
+      orderBy: { performedAt: 'desc' },
+      include: { doctor: DOCTOR_SELECT },
+    })
   },
 
   findById(id: string) {

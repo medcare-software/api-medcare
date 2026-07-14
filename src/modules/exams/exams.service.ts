@@ -108,6 +108,13 @@ async function getScopedForUpdate(user: AuthUser, id: string) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Exame não encontrado' })
     }
     await assertActiveMedicalAccessGrant({ user, memberId: exam.memberId })
+    const doctorId = await resolveDoctorId(user.id)
+    if (exam.doctorId !== doctorId) {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Apenas o médico autor pode editar este exame',
+      })
+    }
     return exam
   }
 
@@ -135,6 +142,13 @@ async function getScopedForDelete(user: AuthUser, id: string) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Exame não encontrado' })
     }
     await assertActiveMedicalAccessGrant({ user, memberId: exam.memberId })
+    const doctorId = await resolveDoctorId(user.id)
+    if (exam.doctorId !== doctorId) {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Apenas o médico autor pode excluir este exame',
+      })
+    }
     return exam
   }
 

@@ -4,6 +4,7 @@ import Fastify from 'fastify'
 import { env } from './config/env.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import caregiverRoutes from './modules/caregiver/caregiver.routes.js'
+import clinicalHistoryRoutes from './modules/clinical-history/clinical-history.routes.js'
 import clinicsRoutes from './modules/clinics/clinics.routes.js'
 import diagnosticsRoutes from './modules/diagnostics/diagnostics.routes.js'
 import doctorsRoutes from './modules/doctors/doctors.routes.js'
@@ -17,6 +18,7 @@ import medicationScanRoutes from './modules/medication-scan/medication-scan.rout
 import medicationsRoutes from './modules/medications/medications.routes.js'
 import notificationsRoutes from './modules/notifications/notifications.routes.js'
 import plansRoutes from './modules/plans/plans.routes.js'
+import prescriptionsRoutes from './modules/prescriptions/prescriptions.routes.js'
 import proceduresRoutes from './modules/procedures/procedures.routes.js'
 import vaccinesRoutes from './modules/vaccines/vaccines.routes.js'
 import { AppError } from './shared/errors/index.js'
@@ -103,6 +105,8 @@ export async function buildApp() {
   await app.register(examsRoutes, { prefix: env.API_PREFIX })
   await app.register(diagnosticsRoutes, { prefix: env.API_PREFIX })
   await app.register(proceduresRoutes, { prefix: env.API_PREFIX })
+  await app.register(prescriptionsRoutes, { prefix: env.API_PREFIX })
+  await app.register(clinicalHistoryRoutes, { prefix: env.API_PREFIX })
   await app.register(medicalAccessRoutes, { prefix: env.API_PREFIX })
   await app.register(gmailIntegrationRoutes, { prefix: env.API_PREFIX })
   await app.register(filesRoutes, { prefix: env.API_PREFIX })

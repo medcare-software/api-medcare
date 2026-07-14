@@ -85,11 +85,15 @@ function toResponse(procedure: {
   descriptionEncrypted: Uint8Array | null
   performedAt: Date
   createdAt: Date
+  doctor?: { crmNumber: string; crmState: string } | null
 }) {
   return {
     id: procedure.id,
     memberId: procedure.memberId,
     doctorId: procedure.doctorId,
+    doctorCrm: procedure.doctor
+      ? `${procedure.doctor.crmNumber}/${procedure.doctor.crmState}`
+      : null,
     title: procedure.title,
     status: procedure.status,
     description: procedure.descriptionEncrypted
