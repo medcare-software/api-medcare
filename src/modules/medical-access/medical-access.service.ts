@@ -19,7 +19,7 @@ export const medicalAccessService = {
   async createGrant(user: AuthUser, input: CreateGrantInput) {
     await assertMemberInScope(user, input.memberId)
 
-    const code = String(crypto.randomInt(100000, 1000000))
+    const code = String(crypto.randomInt(10000000, 100000000))
     const codeHash = hashForLookup(code)
     const expiresAt = new Date(Date.now() + env.MEDICAL_ACCESS_CODE_TTL_MINUTES * 60_000)
 
