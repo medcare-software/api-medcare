@@ -37,6 +37,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           : await authService.validateCrmLogin(body.data)
 
     await authService.assertSessionCapacity(user.id, user.role)
+    await authService.recordLogin(user.id)
 
     const deviceLabel = getDeviceLabel(req.headers['user-agent'])
     const tokens = await issueTokens(fastify, { id: user.id, role: user.role }, { deviceLabel })
@@ -44,7 +45,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({
       data: {
         ...tokens,
-        user: { id: user.id, email: user.email, role: user.role },
+        user: { id: user.id, name: user.name, email: user.email, role: user.role },
       },
     })
   })
@@ -98,6 +99,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({
       data: {
         id: user.id,
+        name: user.name,
         email: user.email,
         role: user.role,
         phone: user.phone,

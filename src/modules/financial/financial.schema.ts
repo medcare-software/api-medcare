@@ -5,6 +5,17 @@ const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
 const AccountPayableTypeEnum = z.enum(['ONE_TIME', 'RECURRING'])
 const AccountPayableStatusEnum = z.enum(['PAID', 'PENDING', 'OVERDUE', 'PAID_LATE'])
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
+const SubscriptionStatusEnum = z.enum(['ACTIVE', 'LATE', 'CANCELLED'])
+
+// Só metadados de exibição (frequência/término) — não dispara geração automática
+// de próximas ocorrências, cobrança aqui é sempre manual.
+const RecurrenceConfigSchema = z.object({
+  startDateIso: z.string().min(1),
+  frequency: z.enum(['dia', 'semana', 'mes', 'ano']),
+  endType: z.enum(['never', 'after_occurrences', 'on_date']),
+  occurrencesCount: z.number().int().positive().optional(),
+  endDateIso: z.string().optional(),
+})
 
 export const CreateSupplierSchema = z.object({
   name: z.string().min(1),
@@ -39,6 +50,7 @@ export const CreateAccountPayableSchema = z.object({
   dueDate: z.coerce.date(),
   paymentMethod: PaymentMethodEnum,
   type: AccountPayableTypeEnum.default('ONE_TIME'),
+  recurrence: RecurrenceConfigSchema.optional(),
 })
 
 export const UpdateAccountPayableSchema = z.object({
@@ -48,6 +60,7 @@ export const UpdateAccountPayableSchema = z.object({
   dueDate: z.coerce.date().optional(),
   paymentMethod: PaymentMethodEnum.optional(),
   type: AccountPayableTypeEnum.optional(),
+  recurrence: RecurrenceConfigSchema.optional(),
   receiptFileId: z.string().min(1).optional(),
 })
 
@@ -61,6 +74,16 @@ export const ListAccountsPayableQuerySchema = z.object({
   category: SupplierCategoryEnum.optional(),
   dueDateFrom: z.coerce.date().optional(),
   dueDateTo: z.coerce.date().optional(),
+  search: z.string().min(1).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+})
+
+export const ListReceivablesQuerySchema = z.object({
+  status: SubscriptionStatusEnum.optional(),
+  paymentMethod: PaymentMethodEnum.optional(),
+  planId: z.string().min(1).optional(),
+  search: z.string().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 })
@@ -72,3 +95,5 @@ export type CreateAccountPayableInput = z.infer<typeof CreateAccountPayableSchem
 export type UpdateAccountPayableInput = z.infer<typeof UpdateAccountPayableSchema>
 export type MarkPaidInput = z.infer<typeof MarkPaidSchema>
 export type ListAccountsPayableQuery = z.infer<typeof ListAccountsPayableQuerySchema>
+export type RecurrenceConfigInput = z.infer<typeof RecurrenceConfigSchema>
+export type ListReceivablesQuery = z.infer<typeof ListReceivablesQuerySchema>

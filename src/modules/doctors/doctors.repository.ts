@@ -67,6 +67,22 @@ export const doctorsRepository = {
     })
   },
 
+  count(filters: DoctorListFilters) {
+    return db.doctor.count({
+      where: {
+        deletedAt: null,
+        ...(filters.status && { status: filters.status }),
+        ...(filters.specialty && { specialties: { has: filters.specialty } }),
+        ...(filters.search && {
+          OR: [
+            { crmNumber: { contains: filters.search, mode: 'insensitive' } },
+            { user: { email: { contains: filters.search, mode: 'insensitive' } } },
+          ],
+        }),
+      },
+    })
+  },
+
   findManyLinkedToClinic(clinicId: string, pagination: { skip: number; take: number }) {
     return db.doctor.findMany({
       where: { deletedAt: null, clinics: { some: { clinicId, active: true } } },
@@ -77,8 +93,24 @@ export const doctorsRepository = {
     })
   },
 
+  countLinkedToClinic(clinicId: string) {
+    return db.doctor.count({
+      where: { deletedAt: null, clinics: { some: { clinicId, active: true } } },
+    })
+  },
+
   findById(id: string) {
     return db.doctor.findFirst({ where: { id, deletedAt: null }, include: doctorInclude })
+  },
+
+  // Espelha findDoctorLinks de clinics.repository.ts, na direção oposta (todas as
+  // clínicas de um médico, em vez de todos os médicos de uma clínica).
+  findClinicLinks(doctorId: string) {
+    return db.clinicDoctorLink.findMany({
+      where: { doctorId },
+      include: { clinic: true },
+      orderBy: { linkedAt: 'desc' },
+    })
   },
 
   findLinkedToClinic(id: string, clinicId: string) {
@@ -170,6 +202,12 @@ export const doctorsRepository = {
       db.refreshToken.updateMany({
         where: { userId, revoked: false },
         data: { revoked: true, revokedAt: new Date() },
+      }),
+      // Mesmo racional de clinics.repository.ts#deactivateTx — evita que a
+      // assinatura continue ACTIVE (e contando no MRR) após o médico ser excluído.
+      db.subscription.updateMany({
+        where: { doctorId, status: { in: ['ACTIVE', 'LATE'] } },
+        data: { status: 'CANCELLED' },
       }),
     ])
   },

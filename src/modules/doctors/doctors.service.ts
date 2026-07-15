@@ -1,20 +1,21 @@
-import crypto from 'node:crypto'
-
 import bcrypt from 'bcryptjs'
 
 import { env } from '../../config/env.js'
 import { resolveClinicId, resolveDoctorId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
-import { doctorWelcomeTemplate, sendMail } from '../../shared/mail/index.js'
+import { accountWelcomeTemplate, sendMail } from '../../shared/mail/index.js'
 import {
   decryptField,
   encryptField,
+  generateTemporaryPassword,
   hashForLookup,
+  maskCnpj,
   maskCpf,
   onlyDigits,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
-import { omitUndefined } from '../../shared/utils/index.js'
+import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
+import { plansService } from '../plans/plans.service.js'
 import { doctorsRepository } from './doctors.repository.js'
 import type {
   CreateDoctorInput,
@@ -22,12 +23,6 @@ import type {
   UpdateDoctorInput,
   UpdateDoctorSelfInput,
 } from './doctors.schema.js'
-
-// Gera uma senha temporária forte (nunca vem do client) — garante ao menos 1
-// maiúscula/1 dígito/1 símbolo pra já nascer válida contra a política de senha do front.
-function generateTemporaryPassword(): string {
-  return `${crypto.randomBytes(10).toString('base64url')}A1!`
-}
 
 interface DoctorUserView {
   id: string
@@ -62,7 +57,7 @@ async function resolveScopedDoctor(user: AuthUser, id: string) {
 }
 
 export const doctorsService = {
-  async create(input: CreateDoctorInput) {
+  async create(user: AuthUser, input: CreateDoctorInput) {
     const existingUser = await doctorsRepository.findUserByEmail(input.email)
     if (existingUser) {
       throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
@@ -92,11 +87,24 @@ export const doctorsService = {
     })
 
     try {
-      const template = doctorWelcomeTemplate(input.name, temporaryPassword)
+      const template = accountWelcomeTemplate(input.name, temporaryPassword)
       await sendMail({ to: input.email, ...template })
     } catch (err) {
       // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
       console.error(`[doctors] Falha ao enviar e-mail de boas-vindas para ${input.email}`, err)
+    }
+
+    // Assinatura inicial é opcional — só é criada se plano + forma de pagamento +
+    // endereço de cobrança vierem juntos (mesmo racional de clinicsService.create).
+    if (input.planId && input.paymentMethod && input.billingAddress) {
+      const plan = await plansService.getById(user, input.planId)
+      await plansService.createSubscription(user, {
+        planId: input.planId,
+        doctorId: doctor.id,
+        paymentMethod: input.paymentMethod,
+        nextDueDate: computeNextDueDate(plan.billingCycle),
+        billingAddress: input.billingAddress,
+      })
     }
 
     return maskDoctorForViewer(doctor)
@@ -107,19 +115,23 @@ export const doctorsService = {
 
     if (user.role === 'CLINIC_ADMIN') {
       const clinicId = await resolveClinicId(user.id)
-      const doctors = await doctorsRepository.findManyLinkedToClinic(clinicId, pagination)
-      return doctors.map(maskDoctorForViewer)
+      const [doctors, total] = await Promise.all([
+        doctorsRepository.findManyLinkedToClinic(clinicId, pagination),
+        doctorsRepository.countLinkedToClinic(clinicId),
+      ])
+      return { items: doctors.map(maskDoctorForViewer), total }
     }
 
-    const doctors = await doctorsRepository.findMany(
-      {
-        ...(query.status && { status: query.status }),
-        ...(query.specialty && { specialty: query.specialty }),
-        ...(query.search && { search: query.search }),
-      },
-      pagination,
-    )
-    return doctors.map(maskDoctorForViewer)
+    const filters = {
+      ...(query.status && { status: query.status }),
+      ...(query.specialty && { specialty: query.specialty }),
+      ...(query.search && { search: query.search }),
+    }
+    const [doctors, total] = await Promise.all([
+      doctorsRepository.findMany(filters, pagination),
+      doctorsRepository.count(filters),
+    ])
+    return { items: doctors.map(maskDoctorForViewer), total }
   },
 
   async getById(user: AuthUser, id: string) {
@@ -201,6 +213,25 @@ export const doctorsService = {
   async revokeSession(user: AuthUser, id: string, sessionId: string) {
     const doctor = await resolveScopedDoctor(user, id)
     await doctorsRepository.revokeSessionById(sessionId, doctor.userId)
+  },
+
+  // Todas as clínicas às quais este médico está vinculado (ativo ou não) — usada
+  // na aba "Clínicas" do detalhe do médico no admin da plataforma.
+  async getClinicLinks(user: AuthUser, id: string) {
+    const doctor = await resolveScopedDoctor(user, id)
+    const links = await doctorsRepository.findClinicLinks(doctor.id)
+    return links.map((link) => ({
+      id: link.id,
+      clinicId: link.clinicId,
+      active: link.active,
+      linkedAt: link.linkedAt,
+      clinic: {
+        id: link.clinic.id,
+        tradeName: link.clinic.tradeName,
+        cnpj: maskCnpj(decryptField(link.clinic.cnpjEncrypted)),
+        status: link.clinic.status,
+      },
+    }))
   },
 
   async getUsageSummary(user: AuthUser, id: string) {

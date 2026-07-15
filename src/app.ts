@@ -7,6 +7,7 @@ import caregiverRoutes from './modules/caregiver/caregiver.routes.js'
 import clinicalHistoryRoutes from './modules/clinical-history/clinical-history.routes.js'
 import clinicalSummaryRoutes from './modules/clinical-summary/clinical-summary.routes.js'
 import clinicsRoutes from './modules/clinics/clinics.routes.js'
+import dashboardRoutes from './modules/dashboard/dashboard.routes.js'
 import diagnosticsRoutes from './modules/diagnostics/diagnostics.routes.js'
 import doctorsRoutes from './modules/doctors/doctors.routes.js'
 import examsRoutes from './modules/exams/exams.routes.js'
@@ -97,6 +98,7 @@ export async function buildApp() {
   await app.register(caregiverRoutes, { prefix: env.API_PREFIX })
   await app.register(doctorsRoutes, { prefix: env.API_PREFIX })
   await app.register(clinicsRoutes, { prefix: env.API_PREFIX })
+  await app.register(dashboardRoutes, { prefix: env.API_PREFIX })
   await app.register(plansRoutes, { prefix: env.API_PREFIX })
   await app.register(financialRoutes, { prefix: env.API_PREFIX })
   await app.register(notificationsRoutes, { prefix: env.API_PREFIX })

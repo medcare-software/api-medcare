@@ -110,6 +110,10 @@ export const authService = {
     }
   },
 
+  async recordLogin(userId: string) {
+    await authRepository.updateLastLogin(userId)
+  },
+
   async me(userId: string) {
     const user = await authRepository.findUserById(userId)
     if (!user) {

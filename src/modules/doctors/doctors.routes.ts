@@ -24,7 +24,7 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const doctor = await doctorsService.create(body.data)
+      const doctor = await doctorsService.create(req.user, body.data)
       return reply.status(201).send({ data: doctor })
     },
   )
@@ -42,8 +42,11 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
           details: query.error.issues,
         })
       }
-      const doctors = await doctorsService.list(req.user, query.data)
-      return reply.status(200).send({ data: doctors })
+      const { items, total } = await doctorsService.list(req.user, query.data)
+      return reply.status(200).send({
+        data: items,
+        meta: { total, page: query.data.page, pageSize: query.data.pageSize },
+      })
     },
   )
 
@@ -124,6 +127,17 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
       const { id, sessionId } = req.params as { id: string; sessionId: string }
       await doctorsService.revokeSession(req.user, id, sessionId)
       return reply.status(204).send()
+    },
+  )
+
+  // GET /doctors/:id/clinics — todas as clínicas às quais o médico está vinculado
+  fastify.get(
+    '/doctors/:id/clinics',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN', 'CLINIC_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const links = await doctorsService.getClinicLinks(req.user, id)
+      return reply.status(200).send({ data: links })
     },
   )
 

@@ -26,7 +26,7 @@ export default async function clinicsRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const clinic = await clinicsService.create(body.data)
+      const clinic = await clinicsService.create(req.user, body.data)
       return reply.status(201).send({ data: clinic })
     },
   )
@@ -44,8 +44,11 @@ export default async function clinicsRoutes(fastify: FastifyInstance) {
           details: query.error.issues,
         })
       }
-      const clinics = await clinicsService.list(query.data)
-      return reply.status(200).send({ data: clinics })
+      const { items, total } = await clinicsService.list(query.data)
+      return reply.status(200).send({
+        data: items,
+        meta: { total, page: query.data.page, pageSize: query.data.pageSize },
+      })
     },
   )
 

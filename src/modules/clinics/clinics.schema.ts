@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
+const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
 
 const AddressSchema = z.object({
   street: z.string().min(1),
@@ -22,8 +23,12 @@ export const CreateClinicSchema = z.object({
   planId: z.string().min(1).optional(),
   adminName: z.string().min(1),
   adminEmail: z.string().email(),
-  adminPassword: z.string().min(8),
   adminPhone: z.string().min(8).optional(),
+  // Se um plano for selecionado, paymentMethod + billingAddress juntos criam a
+  // assinatura inicial da clínica (ver clinicsService.create) — omitir os três
+  // para cadastrar a clínica sem assinatura, associada depois pela tela de Planos.
+  paymentMethod: PaymentMethodEnum.optional(),
+  billingAddress: AddressSchema.optional(),
 })
 
 export const UpdateClinicSchema = z.object({

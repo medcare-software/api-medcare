@@ -148,6 +148,7 @@ model User {
   cpfHash      String?    @unique // blind index (HMAC) para busca sem decriptar
   status       UserStatus @default(ACTIVE)
   mfaEnabled   Boolean    @default(false)
+  lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
@@ -632,6 +633,12 @@ model Plan {
   type         PlanType
   basePrice    Decimal      @db.Decimal(10, 2)
   billingCycle BillingCycle @default(MONTHLY)
+  // Regras comerciais do plano — só fazem sentido pra type=CLINIC (quantos
+  // médicos/dispositivos o preço base já inclui, e o valor cobrado por médico
+  // excedente); ficam null em planos type=DOCTOR.
+  includedDoctors  Int?
+  devicesPerDoctor Int?
+  extraMemberFee   Decimal?   @db.Decimal(10, 2)
   status       UserStatus   @default(ACTIVE)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -649,6 +656,7 @@ model Subscription {
   clinicId      String?
   doctorId      String?
   paymentMethod PaymentMethod
+  billingAddress Json? // endereço de cobrança — pode divergir do endereço da clínica/médico
   status        SubscriptionStatus @default(ACTIVE)
   nextDueDate   DateTime
   createdAt     DateTime           @default(now())
@@ -688,6 +696,9 @@ model AccountPayable {
   dueDate       DateTime
   paymentMethod PaymentMethod
   type          AccountPayableType   @default(ONE_TIME)
+  // Metadados de recorrência (frequência, término) só para exibição/organização —
+  // não há job que gera as próximas ocorrências automaticamente (cobrança é manual).
+  recurrence    Json?
   status        AccountPayableStatus @default(PENDING)
   paidAt        DateTime?
   receiptFileId String?

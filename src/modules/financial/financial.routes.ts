@@ -5,6 +5,7 @@ import {
   CreateAccountPayableSchema,
   CreateSupplierSchema,
   ListAccountsPayableQuerySchema,
+  ListReceivablesQuerySchema,
   ListSuppliersQuerySchema,
   MarkPaidSchema,
   UpdateAccountPayableSchema,
@@ -46,8 +47,11 @@ export default async function financialRoutes(fastify: FastifyInstance) {
           details: query.error.issues,
         })
       }
-      const suppliers = await financialService.listSuppliers(query.data)
-      return reply.status(200).send({ data: suppliers })
+      const { items, total } = await financialService.listSuppliers(query.data)
+      return reply.status(200).send({
+        data: items,
+        meta: { total, page: query.data.page, pageSize: query.data.pageSize },
+      })
     },
   )
 
@@ -110,6 +114,16 @@ export default async function financialRoutes(fastify: FastifyInstance) {
     },
   )
 
+  // GET /accounts-payable/summary — KPIs (pendente/vencido/pago no mês)
+  fastify.get(
+    '/accounts-payable/summary',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (_req, reply) => {
+      const summary = await financialService.getAccountsPayableSummary()
+      return reply.status(200).send({ data: summary })
+    },
+  )
+
   // GET /accounts-payable?supplierId=&status=&category=&dueDateFrom=&dueDateTo=
   fastify.get(
     '/accounts-payable',
@@ -123,8 +137,11 @@ export default async function financialRoutes(fastify: FastifyInstance) {
           details: query.error.issues,
         })
       }
-      const accountsPayable = await financialService.listAccountsPayable(query.data)
-      return reply.status(200).send({ data: accountsPayable })
+      const { items, total } = await financialService.listAccountsPayable(query.data)
+      return reply.status(200).send({
+        data: items,
+        meta: { total, page: query.data.page, pageSize: query.data.pageSize },
+      })
     },
   )
 
@@ -185,6 +202,38 @@ export default async function financialRoutes(fastify: FastifyInstance) {
       const { id } = req.params as { id: string }
       await financialService.deleteAccountPayable(id)
       return reply.status(204).send()
+    },
+  )
+
+  // GET /accounts-receivable/summary — KPIs (contagem por status + valor mensal projetado)
+  fastify.get(
+    '/accounts-receivable/summary',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (_req, reply) => {
+      const summary = await financialService.getReceivablesSummary()
+      return reply.status(200).send({ data: summary })
+    },
+  )
+
+  // GET /accounts-receivable?status=&paymentMethod=&planId=&search=&page=&pageSize=
+  // Visão gerencial derivada de Subscription — não há cobrança/fatura real no sistema.
+  fastify.get(
+    '/accounts-receivable',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (req, reply) => {
+      const query = ListReceivablesQuerySchema.safeParse(req.query)
+      if (!query.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: query.error.issues,
+        })
+      }
+      const { items, total } = await financialService.listReceivables(query.data)
+      return reply.status(200).send({
+        data: items,
+        meta: { total, page: query.data.page, pageSize: query.data.pageSize },
+      })
     },
   )
 }

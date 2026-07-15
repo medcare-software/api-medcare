@@ -26,7 +26,7 @@ export function familyMemberActivationLinkTemplate(link: string, memberName: str
   }
 }
 
-export function doctorWelcomeTemplate(name: string, temporaryPassword: string) {
+export function accountWelcomeTemplate(name: string, temporaryPassword: string) {
   return {
     subject: 'Bem-vindo ao Medcare — defina seu acesso',
     text: `Olá, ${name}! Você foi cadastrado no Medcare. Sua senha temporária é ${temporaryPassword}. Faça login e altere sua senha o quanto antes.`,

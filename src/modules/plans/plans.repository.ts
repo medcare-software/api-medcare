@@ -2,6 +2,7 @@ import type {
   BillingCycle,
   PaymentMethod,
   PlanType,
+  Prisma,
   SubscriptionStatus,
   UserStatus,
 } from '@prisma/client'
@@ -19,6 +20,9 @@ type CreatePlanData = {
   type: PlanType
   basePrice: number
   billingCycle: BillingCycle
+  includedDoctors?: number
+  devicesPerDoctor?: number
+  extraMemberFee?: number
 }
 
 type PlanUpdateData = {
@@ -26,6 +30,9 @@ type PlanUpdateData = {
   type?: PlanType
   basePrice?: number
   billingCycle?: BillingCycle
+  includedDoctors?: number | null
+  devicesPerDoctor?: number | null
+  extraMemberFee?: number | null
   status?: UserStatus
 }
 
@@ -41,6 +48,7 @@ type CreateSubscriptionData = {
   clinicId?: string
   paymentMethod: PaymentMethod
   nextDueDate: Date
+  billingAddress?: Prisma.InputJsonValue
 }
 
 type UpdateSubscriptionData = {

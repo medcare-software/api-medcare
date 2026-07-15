@@ -81,6 +81,10 @@ export const authRepository = {
     await db.user.update({ where: { id: userId }, data: { passwordHash } })
   },
 
+  async updateLastLogin(userId: string) {
+    await db.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } })
+  },
+
   async countRecentPasswordResetRequests(userId: string, since: Date) {
     return db.passwordResetToken.count({ where: { userId, createdAt: { gte: since } } })
   },

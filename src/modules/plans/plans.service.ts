@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client'
+
 import { resolveClinicId, resolveDoctorId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
@@ -15,10 +17,17 @@ import type {
 export const plansService = {
   async list(user: AuthUser, query: ListPlansQuery) {
     const includeInactive = user.role === 'PLATFORM_ADMIN' && query.includeInactive === true
-    return plansRepository.findMany({
+    const plans = await plansRepository.findMany({
       ...(query.type && { type: query.type }),
       includeInactive,
     })
+    const activeSubscriptionCounts = await Promise.all(
+      plans.map((plan) => plansRepository.countActiveSubscriptions(plan.id)),
+    )
+    return plans.map((plan, index) => ({
+      ...plan,
+      activeSubscriptionsCount: activeSubscriptionCounts[index],
+    }))
   },
 
   async getById(user: AuthUser, id: string) {
@@ -33,7 +42,17 @@ export const plansService = {
   },
 
   async create(input: CreatePlanInput) {
-    return plansRepository.create(input)
+    return plansRepository.create(
+      omitUndefined({
+        name: input.name,
+        type: input.type,
+        basePrice: input.basePrice,
+        billingCycle: input.billingCycle,
+        includedDoctors: input.includedDoctors,
+        devicesPerDoctor: input.devicesPerDoctor,
+        extraMemberFee: input.extraMemberFee,
+      }),
+    )
   },
 
   async update(id: string, input: UpdatePlanInput) {
@@ -113,6 +132,9 @@ export const plansService = {
       ...(clinicId !== undefined && { clinicId }),
       paymentMethod: input.paymentMethod,
       nextDueDate: input.nextDueDate,
+      ...(input.billingAddress !== undefined && {
+        billingAddress: input.billingAddress as Prisma.InputJsonValue,
+      }),
     })
   },
 

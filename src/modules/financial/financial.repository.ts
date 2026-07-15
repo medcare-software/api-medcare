@@ -2,6 +2,8 @@ import type {
   AccountPayableStatus,
   AccountPayableType,
   PaymentMethod,
+  Prisma,
+  SubscriptionStatus,
   SupplierCategory,
   UserStatus,
 } from '@prisma/client'
@@ -40,6 +42,7 @@ type AccountPayableListFilters = {
   category?: SupplierCategory
   dueDateFrom?: Date
   dueDateTo?: Date
+  search?: string
 }
 
 type CreateAccountPayableData = {
@@ -50,6 +53,7 @@ type CreateAccountPayableData = {
   dueDate: Date
   paymentMethod: PaymentMethod
   type: AccountPayableType
+  recurrence?: Prisma.InputJsonValue
 }
 
 type UpdateAccountPayableData = {
@@ -59,6 +63,7 @@ type UpdateAccountPayableData = {
   dueDate?: Date
   paymentMethod?: PaymentMethod
   type?: AccountPayableType
+  recurrence?: Prisma.InputJsonValue
   receiptFileId?: string
 }
 
@@ -66,6 +71,13 @@ type MarkPaidData = {
   status: AccountPayableStatus
   paidAt: Date
   receiptFileId?: string
+}
+
+type ReceivablesListFilters = {
+  status?: SubscriptionStatus
+  paymentMethod?: PaymentMethod
+  planId?: string
+  search?: string
 }
 
 export const financialRepository = {
@@ -88,6 +100,21 @@ export const financialRepository = {
       orderBy: { createdAt: 'desc' },
       skip: pagination.skip,
       take: pagination.take,
+    })
+  },
+
+  countSuppliers(filters: SupplierListFilters) {
+    return db.supplier.count({
+      where: {
+        ...(filters.status && { status: filters.status }),
+        ...(filters.category && { category: filters.category }),
+        ...(filters.search && {
+          OR: [
+            { name: { contains: filters.search, mode: 'insensitive' } },
+            { email: { contains: filters.search, mode: 'insensitive' } },
+          ],
+        }),
+      },
     })
   },
 
@@ -128,10 +155,38 @@ export const financialRepository = {
             ...(filters.dueDateTo && { lte: filters.dueDateTo }),
           },
         }),
+        ...(filters.search && {
+          OR: [
+            { description: { contains: filters.search, mode: 'insensitive' } },
+            { supplier: { name: { contains: filters.search, mode: 'insensitive' } } },
+          ],
+        }),
       },
       orderBy: { dueDate: 'asc' },
       skip: pagination.skip,
       take: pagination.take,
+    })
+  },
+
+  countAccountsPayable(filters: AccountPayableListFilters) {
+    return db.accountPayable.count({
+      where: {
+        ...(filters.supplierId && { supplierId: filters.supplierId }),
+        ...(filters.status && { status: filters.status }),
+        ...(filters.category && { category: filters.category }),
+        ...((filters.dueDateFrom || filters.dueDateTo) && {
+          dueDate: {
+            ...(filters.dueDateFrom && { gte: filters.dueDateFrom }),
+            ...(filters.dueDateTo && { lte: filters.dueDateTo }),
+          },
+        }),
+        ...(filters.search && {
+          OR: [
+            { description: { contains: filters.search, mode: 'insensitive' } },
+            { supplier: { name: { contains: filters.search, mode: 'insensitive' } } },
+          ],
+        }),
+      },
     })
   },
 
@@ -140,7 +195,7 @@ export const financialRepository = {
   },
 
   createAccountPayable(data: CreateAccountPayableData) {
-    return db.accountPayable.create({ data: { ...data, status: 'PENDING' } })
+    return db.accountPayable.create({ data: omitUndefined({ ...data, status: 'PENDING' }) })
   },
 
   updateAccountPayable(id: string, data: UpdateAccountPayableData) {
@@ -153,5 +208,102 @@ export const financialRepository = {
 
   deleteAccountPayable(id: string) {
     return db.accountPayable.delete({ where: { id } })
+  },
+
+  // "Contas a receber" não é uma tabela própria — deriva de Subscription, já que
+  // não existe cobrança/fatura real no sistema (gestão manual, sem gateway de pagamento).
+  findManyReceivables(filters: ReceivablesListFilters, pagination: { skip: number; take: number }) {
+    return db.subscription.findMany({
+      where: {
+        ...(filters.status && { status: filters.status }),
+        ...(filters.paymentMethod && { paymentMethod: filters.paymentMethod }),
+        ...(filters.planId && { planId: filters.planId }),
+        ...(filters.search && {
+          OR: [
+            { clinic: { tradeName: { contains: filters.search, mode: 'insensitive' } } },
+            { doctor: { user: { name: { contains: filters.search, mode: 'insensitive' } } } },
+          ],
+        }),
+      },
+      include: {
+        plan: { select: { name: true, basePrice: true } },
+        clinic: { select: { tradeName: true, cnpjEncrypted: true } },
+        doctor: { select: { user: { select: { name: true, cpfEncrypted: true } } } },
+      },
+      orderBy: { nextDueDate: 'asc' },
+      skip: pagination.skip,
+      take: pagination.take,
+    })
+  },
+
+  countReceivables(filters: ReceivablesListFilters) {
+    return db.subscription.count({
+      where: {
+        ...(filters.status && { status: filters.status }),
+        ...(filters.paymentMethod && { paymentMethod: filters.paymentMethod }),
+        ...(filters.planId && { planId: filters.planId }),
+        ...(filters.search && {
+          OR: [
+            { clinic: { tradeName: { contains: filters.search, mode: 'insensitive' } } },
+            { doctor: { user: { name: { contains: filters.search, mode: 'insensitive' } } } },
+          ],
+        }),
+      },
+    })
+  },
+
+  async summarizeAccountsPayable() {
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+
+    const [pending, overdue, paidThisMonth] = await Promise.all([
+      db.accountPayable.aggregate({
+        where: { status: 'PENDING' },
+        _sum: { valueCents: true },
+        _count: { _all: true },
+      }),
+      db.accountPayable.aggregate({
+        where: { status: 'OVERDUE' },
+        _sum: { valueCents: true },
+        _count: { _all: true },
+      }),
+      db.accountPayable.aggregate({
+        where: {
+          status: { in: ['PAID', 'PAID_LATE'] },
+          paidAt: { gte: startOfMonth, lt: startOfNextMonth },
+        },
+        _sum: { valueCents: true },
+        _count: { _all: true },
+      }),
+    ])
+
+    return {
+      pendingCents: pending._sum.valueCents ?? 0,
+      pendingCount: pending._count._all,
+      overdueCents: overdue._sum.valueCents ?? 0,
+      overdueCount: overdue._count._all,
+      paidThisMonthCents: paidThisMonth._sum.valueCents ?? 0,
+      paidThisMonthCount: paidThisMonth._count._all,
+    }
+  },
+
+  // Mesmo padrão de sumActiveSubscriptionRevenue do dashboard — soma em memória
+  // porque o valor mensal vive em Plan.basePrice, não em Subscription.
+  async summarizeReceivables() {
+    const [activeCount, lateCount, cancelledCount, activeAndLate] = await Promise.all([
+      db.subscription.count({ where: { status: 'ACTIVE' } }),
+      db.subscription.count({ where: { status: 'LATE' } }),
+      db.subscription.count({ where: { status: 'CANCELLED' } }),
+      db.subscription.findMany({
+        where: { status: { in: ['ACTIVE', 'LATE'] } },
+        select: { plan: { select: { basePrice: true } } },
+      }),
+    ])
+    const totalMonthlyCents = Math.round(
+      activeAndLate.reduce((sum, subscription) => sum + Number(subscription.plan.basePrice), 0) *
+        100,
+    )
+    return { activeCount, lateCount, cancelledCount, totalMonthlyCents }
   },
 }

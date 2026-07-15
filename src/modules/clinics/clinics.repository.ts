@@ -62,6 +62,21 @@ export const clinicsRepository = {
     })
   },
 
+  count(filters: ClinicListFilters) {
+    return db.clinic.count({
+      where: {
+        deletedAt: null,
+        ...(filters.status && { status: filters.status }),
+        ...(filters.search && {
+          OR: [
+            { tradeName: { contains: filters.search, mode: 'insensitive' } },
+            { email: { contains: filters.search, mode: 'insensitive' } },
+          ],
+        }),
+      },
+    })
+  },
+
   findById(id: string) {
     return db.clinic.findFirst({ where: { id, deletedAt: null } })
   },
@@ -112,6 +127,12 @@ export const clinicsRepository = {
         data: { deletedAt: new Date(), status: 'INACTIVE' },
       }),
       db.clinicDoctorLink.updateMany({ where: { clinicId }, data: { active: false } }),
+      // Sem isso, a assinatura ficaria ACTIVE indefinidamente e continuaria
+      // entrando no MRR do dashboard mesmo com a clínica excluída.
+      db.subscription.updateMany({
+        where: { clinicId, status: { in: ['ACTIVE', 'LATE'] } },
+        data: { status: 'CANCELLED' },
+      }),
     ])
   },
 

@@ -1,4 +1,4 @@
-import type { Supplier } from '@prisma/client'
+import type { Prisma, Supplier } from '@prisma/client'
 
 import { AppError } from '../../shared/errors/index.js'
 import {
@@ -17,6 +17,7 @@ import type {
   CreateAccountPayableInput,
   CreateSupplierInput,
   ListAccountsPayableQuery,
+  ListReceivablesQuery,
   ListSuppliersQuery,
   MarkPaidInput,
   UpdateAccountPayableInput,
@@ -83,16 +84,17 @@ export const financialService = {
   },
 
   async listSuppliers(query: ListSuppliersQuery) {
+    const filters = {
+      ...(query.status && { status: query.status }),
+      ...(query.category && { category: query.category }),
+      ...(query.search && { search: query.search }),
+    }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
-    const suppliers = await financialRepository.findManySuppliers(
-      {
-        ...(query.status && { status: query.status }),
-        ...(query.category && { category: query.category }),
-        ...(query.search && { search: query.search }),
-      },
-      pagination,
-    )
-    return suppliers.map(maskSupplier)
+    const [suppliers, total] = await Promise.all([
+      financialRepository.findManySuppliers(filters, pagination),
+      financialRepository.countSuppliers(filters),
+    ])
+    return { items: suppliers.map(maskSupplier), total }
   },
 
   async getSupplierById(user: AuthUser, id: string) {
@@ -162,21 +164,29 @@ export const financialService = {
     if (!supplier || supplier.status !== 'ACTIVE') {
       throw new AppError({ code: 'NOT_FOUND', message: 'Fornecedor não encontrado ou inativo' })
     }
-    return financialRepository.createAccountPayable(input)
+    return financialRepository.createAccountPayable(
+      omitUndefined({
+        ...input,
+        recurrence: input.recurrence as Prisma.InputJsonValue | undefined,
+      }),
+    )
   },
 
   async listAccountsPayable(query: ListAccountsPayableQuery) {
+    const filters = {
+      ...(query.supplierId && { supplierId: query.supplierId }),
+      ...(query.status && { status: query.status }),
+      ...(query.category && { category: query.category }),
+      ...(query.dueDateFrom && { dueDateFrom: query.dueDateFrom }),
+      ...(query.dueDateTo && { dueDateTo: query.dueDateTo }),
+      ...(query.search && { search: query.search }),
+    }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
-    return financialRepository.findManyAccountsPayable(
-      {
-        ...(query.supplierId && { supplierId: query.supplierId }),
-        ...(query.status && { status: query.status }),
-        ...(query.category && { category: query.category }),
-        ...(query.dueDateFrom && { dueDateFrom: query.dueDateFrom }),
-        ...(query.dueDateTo && { dueDateTo: query.dueDateTo }),
-      },
-      pagination,
-    )
+    const [items, total] = await Promise.all([
+      financialRepository.findManyAccountsPayable(filters, pagination),
+      financialRepository.countAccountsPayable(filters),
+    ])
+    return { items, total }
   },
 
   async getAccountPayableById(id: string) {
@@ -195,7 +205,13 @@ export const financialService = {
     if (OPEN_ACCOUNT_PAYABLE_STATUSES.includes(accountPayable.status)) {
       throw new AppError({ code: 'CONFLICT', message: 'Conta paga não pode ser editada' })
     }
-    return financialRepository.updateAccountPayable(id, omitUndefined(input))
+    return financialRepository.updateAccountPayable(
+      id,
+      omitUndefined({
+        ...input,
+        recurrence: input.recurrence as Prisma.InputJsonValue | undefined,
+      }),
+    )
   },
 
   async payAccountPayable(id: string, input: MarkPaidInput) {
@@ -225,5 +241,52 @@ export const financialService = {
       throw new AppError({ code: 'CONFLICT', message: 'Conta paga não pode ser excluída' })
     }
     await financialRepository.deleteAccountPayable(id)
+  },
+
+  // Não há cobrança/fatura real (sem gateway de pagamento) — "contas a receber" é uma
+  // visão gerencial derivada de Subscription, mesmo padrão de maskCnpj/maskCpf usado
+  // em clinics/doctors: mascara pra exibição, sem gravar AuditLog (não é reveal completo).
+  async listReceivables(query: ListReceivablesQuery) {
+    const filters = {
+      ...(query.status && { status: query.status }),
+      ...(query.paymentMethod && { paymentMethod: query.paymentMethod }),
+      ...(query.planId && { planId: query.planId }),
+      ...(query.search && { search: query.search }),
+    }
+    const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
+    const [subscriptions, total] = await Promise.all([
+      financialRepository.findManyReceivables(filters, pagination),
+      financialRepository.countReceivables(filters),
+    ])
+
+    const items = subscriptions.map((subscription) => {
+      const clientName = subscription.clinic?.tradeName ?? subscription.doctor?.user.name ?? '—'
+      const clientDocument = subscription.clinic
+        ? maskCnpj(decryptField(subscription.clinic.cnpjEncrypted))
+        : subscription.doctor?.user.cpfEncrypted
+          ? maskCpf(decryptField(subscription.doctor.user.cpfEncrypted))
+          : null
+
+      return {
+        id: subscription.id,
+        clientName,
+        clientDocument,
+        planName: subscription.plan.name,
+        valueCents: Math.round(Number(subscription.plan.basePrice) * 100),
+        dueDate: subscription.nextDueDate,
+        paymentMethod: subscription.paymentMethod,
+        status: subscription.status,
+      }
+    })
+
+    return { items, total }
+  },
+
+  async getReceivablesSummary() {
+    return financialRepository.summarizeReceivables()
+  },
+
+  async getAccountsPayableSummary() {
+    return financialRepository.summarizeAccountsPayable()
   },
 }

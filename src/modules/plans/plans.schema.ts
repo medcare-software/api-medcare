@@ -6,11 +6,24 @@ const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
 const SubscriptionStatusEnum = z.enum(['ACTIVE', 'LATE', 'CANCELLED'])
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
 
+const AddressSchema = z.object({
+  street: z.string().min(1),
+  number: z.string().min(1),
+  complement: z.string().min(1).optional(),
+  neighborhood: z.string().min(1),
+  city: z.string().min(1),
+  state: z.string().length(2),
+  zipCode: z.string().min(8),
+})
+
 export const CreatePlanSchema = z.object({
   name: z.string().min(1),
   type: PlanTypeEnum,
   basePrice: z.coerce.number().positive(),
   billingCycle: BillingCycleEnum.default('MONTHLY'),
+  includedDoctors: z.coerce.number().int().positive().optional(),
+  devicesPerDoctor: z.coerce.number().int().positive().optional(),
+  extraMemberFee: z.coerce.number().positive().optional(),
 })
 
 export const UpdatePlanSchema = z.object({
@@ -18,6 +31,9 @@ export const UpdatePlanSchema = z.object({
   type: PlanTypeEnum.optional(),
   basePrice: z.coerce.number().positive().optional(),
   billingCycle: BillingCycleEnum.optional(),
+  includedDoctors: z.coerce.number().int().positive().nullable().optional(),
+  devicesPerDoctor: z.coerce.number().int().positive().nullable().optional(),
+  extraMemberFee: z.coerce.number().positive().nullable().optional(),
   status: StatusEnum.optional(),
 })
 
@@ -36,6 +52,7 @@ export const CreateSubscriptionSchema = z
     clinicId: z.string().min(1).optional(),
     paymentMethod: PaymentMethodEnum,
     nextDueDate: z.coerce.date(),
+    billingAddress: AddressSchema.optional(),
   })
   .refine((data) => Boolean(data.doctorId) !== Boolean(data.clinicId), {
     message: 'Informe exatamente um de doctorId ou clinicId',

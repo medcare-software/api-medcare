@@ -4,9 +4,11 @@ import bcrypt from 'bcryptjs'
 import { env } from '../../config/env.js'
 import { resolveClinicId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import { accountWelcomeTemplate, sendMail } from '../../shared/mail/index.js'
 import {
   decryptField,
   encryptField,
+  generateTemporaryPassword,
   hashForLookup,
   maskCnpj,
   maskCpf,
@@ -14,7 +16,8 @@ import {
   recordSensitiveAccess,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
-import { omitUndefined } from '../../shared/utils/index.js'
+import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
+import { plansService } from '../plans/plans.service.js'
 import { clinicsRepository } from './clinics.repository.js'
 import type {
   CreateClinicInput,
@@ -68,7 +71,7 @@ async function resolveScopedClinicId(user: AuthUser, clinicId: string): Promise<
 }
 
 export const clinicsService = {
-  async create(input: CreateClinicInput) {
+  async create(user: AuthUser, input: CreateClinicInput) {
     const existingAdmin = await clinicsRepository.findUserByEmail(input.adminEmail)
     if (existingAdmin) {
       throw new AppError({ code: 'CONFLICT', message: 'E-mail do administrador já cadastrado' })
@@ -81,7 +84,8 @@ export const clinicsService = {
       throw new AppError({ code: 'CONFLICT', message: 'CNPJ já cadastrado' })
     }
 
-    const adminPasswordHash = await bcrypt.hash(input.adminPassword, env.BCRYPT_ROUNDS)
+    const temporaryPassword = generateTemporaryPassword()
+    const adminPasswordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
 
     const clinic = await clinicsRepository.createWithAdmin({
       legalNameEncrypted: encryptField(input.legalName),
@@ -98,19 +102,41 @@ export const clinicsService = {
       ...(input.adminPhone !== undefined && { adminPhone: input.adminPhone }),
     })
 
+    try {
+      const template = accountWelcomeTemplate(input.adminName, temporaryPassword)
+      await sendMail({ to: input.adminEmail, ...template })
+    } catch (err) {
+      // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
+      console.error(`[clinics] Falha ao enviar e-mail de boas-vindas para ${input.adminEmail}`, err)
+    }
+
+    // Assinatura inicial é opcional — só é criada se plano + forma de pagamento +
+    // endereço de cobrança vierem juntos (ver comentário em CreateClinicSchema).
+    if (input.planId && input.paymentMethod && input.billingAddress) {
+      const plan = await plansService.getById(user, input.planId)
+      await plansService.createSubscription(user, {
+        planId: input.planId,
+        clinicId: clinic.id,
+        paymentMethod: input.paymentMethod,
+        nextDueDate: computeNextDueDate(plan.billingCycle),
+        billingAddress: input.billingAddress,
+      })
+    }
+
     return revealClinic(clinic)
   },
 
   async list(query: ListClinicsQuery) {
+    const filters = {
+      ...(query.status && { status: query.status }),
+      ...(query.search && { search: query.search }),
+    }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
-    const clinics = await clinicsRepository.findMany(
-      {
-        ...(query.status && { status: query.status }),
-        ...(query.search && { search: query.search }),
-      },
-      pagination,
-    )
-    return clinics.map(maskClinic)
+    const [clinics, total] = await Promise.all([
+      clinicsRepository.findMany(filters, pagination),
+      clinicsRepository.count(filters),
+    ])
+    return { items: clinics.map(maskClinic), total }
   },
 
   async getById(user: AuthUser, id: string) {
