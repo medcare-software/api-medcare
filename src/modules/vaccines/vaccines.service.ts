@@ -1,8 +1,10 @@
 import type { Role } from '@prisma/client'
 
 import {
+  assertActiveMedicalAccessGrant,
   assertClinicalReadAccess,
   assertOwnScopedMemberInScope,
+  resolveDoctorId,
   resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
@@ -28,10 +30,12 @@ export const vaccinesService = {
   },
 
   async create(user: AuthUser, input: CreateVaccineInput) {
-    assertFamilyWriter(user)
-    await assertOwnScopedMemberInScope(user, input.memberId)
+    await assertVaccineWriteAccess(user, input.memberId)
     const { memberId, ...data } = input
-    return vaccinesRepository.create(memberId, data)
+    return vaccinesRepository.create(memberId, {
+      ...data,
+      ...(user.role === 'DOCTOR' && { doctorId: await resolveDoctorId(user.id) }),
+    })
   },
 
   async update(user: AuthUser, id: string, input: UpdateVaccineInput) {
@@ -49,8 +53,7 @@ export const vaccinesService = {
   },
 
   async recordDose(user: AuthUser, vaccineId: string, input: RecordVaccineDoseInput) {
-    assertFamilyWriter(user)
-    const vaccine = await getScopedOrThrow(user, vaccineId)
+    const vaccine = await getVaccineForWrite(user, vaccineId)
     const dose = await vaccinesRepository.createDose(vaccine.id, input)
     if (input.nextBoosterAt && input.nextBoosterAt < new Date()) {
       await vaccinesRepository.updateStatus(vaccine.id, 'BOOSTER_DUE')
@@ -68,6 +71,35 @@ function assertFamilyWriter(user: AuthUser) {
   if (!FAMILY_WRITER_ROLES.includes(user.role)) {
     throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode gerenciar vacinas' })
   }
+}
+
+// Escritores de cadastro (create/recordDose): família (via escopo) ou DOCTOR com grant ativo.
+// update/remove continuam restritos à família (assertFamilyWriter/assertFamilyDeleter).
+async function assertVaccineWriteAccess(user: AuthUser, memberId: string) {
+  if (FAMILY_WRITER_ROLES.includes(user.role)) {
+    await assertOwnScopedMemberInScope(user, memberId)
+    return
+  }
+  if (user.role === 'DOCTOR') {
+    await assertActiveMedicalAccessGrant({ user, memberId })
+    return
+  }
+  throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode gerenciar vacinas' })
+}
+
+async function getVaccineForWrite(user: AuthUser, id: string) {
+  if (FAMILY_WRITER_ROLES.includes(user.role)) {
+    return getScopedOrThrow(user, id)
+  }
+  if (user.role === 'DOCTOR') {
+    const vaccine = await vaccinesRepository.findById(id)
+    if (!vaccine) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Vacina não encontrada' })
+    }
+    await assertActiveMedicalAccessGrant({ user, memberId: vaccine.memberId })
+    return vaccine
+  }
+  throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode gerenciar vacinas' })
 }
 
 function assertFamilyDeleter(user: AuthUser) {

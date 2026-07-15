@@ -24,7 +24,7 @@ export const vaccinesRepository = {
     return db.vaccine.findUnique({ where: { id } })
   },
 
-  create(memberId: string, input: Omit<CreateVaccineInput, 'memberId'>) {
+  create(memberId: string, input: Omit<CreateVaccineInput, 'memberId'> & { doctorId?: string }) {
     return db.vaccine.create({ data: { memberId, ...omitUndefined(input) } })
   },
 

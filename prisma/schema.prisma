@@ -324,6 +324,7 @@ model MedicationDoseRecord {
 model Vaccine {
   id                  String        @id @default(cuid())
   memberId            String
+  doctorId            String? // autor quando cadastrada por um médico com grant ativo — nulo quando cadastrada pela família
   name                String
   administrationRoute String
   totalDoses          Int
@@ -334,9 +335,11 @@ model Vaccine {
   updatedAt           DateTime      @updatedAt
 
   member FamilyMember  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor Doctor?       @relation(fields: [doctorId], references: [id], onDelete: SetNull)
   doses  VaccineDose[]
 
   @@index([memberId])
+  @@index([doctorId])
   @@map("vaccines")
 }
 
@@ -359,14 +362,16 @@ model VaccineDose {
 }
 
 model Exam {
-  id        String     @id @default(cuid())
-  memberId  String
-  doctorId  String? // autor quando enviado por um médico (source=DOCTOR) — nulo em registros antigos/manuais
-  name      String
-  examDate  DateTime
-  fileId    String? // referência a objeto no storage (MinIO)
-  source    ExamSource @default(MANUAL)
-  createdAt DateTime   @default(now())
+  id         String     @id @default(cuid())
+  memberId   String
+  doctorId   String? // autor quando enviado por um médico (source=DOCTOR) — nulo em registros antigos/manuais
+  name       String
+  examType   ExamType   @default(OUTROS)
+  clinicName String? // nome do laboratório/convênio informado livremente, não uma Clinic cadastrada
+  examDate   DateTime
+  fileId     String? // referência a objeto no storage (MinIO)
+  source     ExamSource @default(MANUAL)
+  createdAt  DateTime   @default(now())
 
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
   doctor  Doctor?      @relation(fields: [doctorId], references: [id])
@@ -374,6 +379,12 @@ model Exam {
   @@index([memberId])
   @@index([doctorId])
   @@map("exams")
+}
+
+enum ExamType {
+  LABORATORIAL
+  IMAGEM
+  OUTROS
 }
 
 model Diagnostic {
@@ -552,6 +563,7 @@ model Doctor {
   procedures    Procedure[]
   subscriptions Subscription[]
   exams         Exam[]
+  vaccines      Vaccine[]
   prescriptions Prescription[]
 
   @@unique([crmNumber, crmState])

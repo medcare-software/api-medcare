@@ -11,6 +11,8 @@ import { vaccinesService } from './vaccines.service.js'
 
 const FAMILY_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'] as const
 const VACCINE_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER'] as const
+// Cadastro (não edição/exclusão) também é liberado pro médico com grant ativo — ver vaccines.service.ts.
+const VACCINE_CREATORS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER', 'DOCTOR'] as const
 
 export default async function vaccinesRoutes(fastify: FastifyInstance) {
   // GET /vaccines?memberId=
@@ -30,7 +32,7 @@ export default async function vaccinesRoutes(fastify: FastifyInstance) {
   // POST /vaccines
   fastify.post(
     '/vaccines',
-    { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
+    { preHandler: [authenticate, authorize(...VACCINE_CREATORS)] },
     async (req, reply) => {
       const body = CreateVaccineSchema.safeParse(req.body)
       if (!body.success) {
@@ -78,7 +80,7 @@ export default async function vaccinesRoutes(fastify: FastifyInstance) {
   // POST /vaccines/:id/doses
   fastify.post(
     '/vaccines/:id/doses',
-    { preHandler: [authenticate, authorize(...FAMILY_WRITERS)] },
+    { preHandler: [authenticate, authorize(...VACCINE_CREATORS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const body = RecordVaccineDoseSchema.safeParse(req.body)
