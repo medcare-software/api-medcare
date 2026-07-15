@@ -43,6 +43,9 @@ export const proceduresService = {
       ...(input.description !== undefined && {
         descriptionEncrypted: encryptField(input.description),
       }),
+      ...(input.observations !== undefined && {
+        observationsEncrypted: encryptField(input.observations),
+      }),
     })
     return toResponse(procedure)
   },
@@ -71,6 +74,9 @@ export const proceduresService = {
       ...(input.description !== undefined && {
         descriptionEncrypted: encryptField(input.description),
       }),
+      ...(input.observations !== undefined && {
+        observationsEncrypted: encryptField(input.observations),
+      }),
     })
     return toResponse(updated)
   },
@@ -83,6 +89,7 @@ function toResponse(procedure: {
   title: string
   status: string
   descriptionEncrypted: Uint8Array | null
+  observationsEncrypted: Uint8Array | null
   performedAt: Date
   createdAt: Date
   doctor?: { crmNumber: string; crmState: string } | null
@@ -98,6 +105,9 @@ function toResponse(procedure: {
     status: procedure.status,
     description: procedure.descriptionEncrypted
       ? decryptField(procedure.descriptionEncrypted)
+      : null,
+    observations: procedure.observationsEncrypted
+      ? decryptField(procedure.observationsEncrypted)
       : null,
     performedAt: procedure.performedAt,
     createdAt: procedure.createdAt,

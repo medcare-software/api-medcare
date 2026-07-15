@@ -458,6 +458,8 @@ model Procedure {
   title                String
   status               ProcedureStatus @default(IN_PROGRESS)
   descriptionEncrypted Bytes?
+  // Observações clínicas adicionais — texto sigiloso (LGPD/PHI), sempre cifrado via encryptField().
+  observationsEncrypted Bytes?
   performedAt          DateTime
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt

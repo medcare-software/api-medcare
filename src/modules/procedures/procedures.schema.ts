@@ -6,6 +6,7 @@ export const CreateProcedureSchema = z.object({
   memberId: z.string().min(1),
   title: z.string().min(1),
   description: z.string().min(1).optional(),
+  observations: z.string().min(1).optional(),
   performedAt: z.coerce.date(),
   status: ProcedureStatusEnum.default('IN_PROGRESS'),
 })
@@ -13,6 +14,7 @@ export const CreateProcedureSchema = z.object({
 export const UpdateProcedureSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
+  observations: z.string().min(1).optional(),
   performedAt: z.coerce.date().optional(),
   status: ProcedureStatusEnum.optional(),
 })

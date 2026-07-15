@@ -6,6 +6,7 @@ interface CreateProcedureData {
   title: string
   status: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
   descriptionEncrypted?: Buffer<ArrayBuffer>
+  observationsEncrypted?: Buffer<ArrayBuffer>
   performedAt: Date
 }
 
@@ -13,6 +14,7 @@ interface UpdateProcedureData {
   title?: string
   status?: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
   descriptionEncrypted?: Buffer<ArrayBuffer>
+  observationsEncrypted?: Buffer<ArrayBuffer>
   performedAt?: Date
 }
 
