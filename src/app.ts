@@ -5,6 +5,7 @@ import { env } from './config/env.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import caregiverRoutes from './modules/caregiver/caregiver.routes.js'
 import clinicalHistoryRoutes from './modules/clinical-history/clinical-history.routes.js'
+import clinicalSummaryRoutes from './modules/clinical-summary/clinical-summary.routes.js'
 import clinicsRoutes from './modules/clinics/clinics.routes.js'
 import diagnosticsRoutes from './modules/diagnostics/diagnostics.routes.js'
 import doctorsRoutes from './modules/doctors/doctors.routes.js'
@@ -107,6 +108,7 @@ export async function buildApp() {
   await app.register(proceduresRoutes, { prefix: env.API_PREFIX })
   await app.register(prescriptionsRoutes, { prefix: env.API_PREFIX })
   await app.register(clinicalHistoryRoutes, { prefix: env.API_PREFIX })
+  await app.register(clinicalSummaryRoutes, { prefix: env.API_PREFIX })
   await app.register(medicalAccessRoutes, { prefix: env.API_PREFIX })
   await app.register(gmailIntegrationRoutes, { prefix: env.API_PREFIX })
   await app.register(filesRoutes, { prefix: env.API_PREFIX })
