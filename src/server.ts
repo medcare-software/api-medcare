@@ -8,6 +8,7 @@ import cron from 'node-cron'
 import { buildApp } from './app.js'
 import { env } from './config/env.js'
 import { checkExpiringAccessJob } from './shared/jobs/expiring-access.job.js'
+import { storeAnalyticsSyncJob } from './shared/jobs/store-analytics-sync.job.js'
 
 const start = async () => {
   try {
@@ -20,6 +21,15 @@ const start = async () => {
     cron.schedule('0 8 * * *', () => {
       void checkExpiringAccessJob().catch((err) => {
         app.log.error(err, '[cron] falha ao checar acessos expirando')
+      })
+    })
+
+    // Uma vez por dia, às 9h — sincroniza downloads do dia anterior via App
+    // Store Connect/Google Play (ver src/shared/jobs/store-analytics-sync.job.ts).
+    // No-op silencioso por plataforma quando as credenciais não estão configuradas.
+    cron.schedule('0 9 * * *', () => {
+      void storeAnalyticsSyncJob().catch((err) => {
+        app.log.error(err, '[cron] falha ao sincronizar downloads das lojas')
       })
     })
   } catch (err) {

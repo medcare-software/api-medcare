@@ -28,3 +28,23 @@ export async function recordSensitiveAccess(params: RecordAccessParams): Promise
     },
   })
 }
+
+/**
+ * Registra no AuditLog uma ação administrativa relevante (login, criação/edição
+ * de clínica/médico/plano, vínculo de médico, force-reset de senha, etc) — sem
+ * a conotação de "acesso a dado sigiloso" de recordSensitiveAccess, é só o
+ * histórico de "quem fez o quê" consumido pela tela de Auditoria do admin.
+ */
+export async function recordAuditEvent(params: RecordAccessParams): Promise<void> {
+  await db.auditLog.create({
+    data: {
+      actorId: params.actorId,
+      action: params.action,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      ...(params.metadata !== undefined && {
+        metadata: params.metadata as Prisma.InputJsonValue,
+      }),
+    },
+  })
+}

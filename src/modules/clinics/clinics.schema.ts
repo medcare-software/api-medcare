@@ -17,7 +17,7 @@ export const CreateClinicSchema = z.object({
   legalName: z.string().min(1),
   tradeName: z.string().min(1),
   cnpj: z.string().min(14),
-  email: z.string().email(),
+  email: z.string().email().optional(),
   phone: z.string().min(8),
   address: AddressSchema,
   planId: z.string().min(1).optional(),

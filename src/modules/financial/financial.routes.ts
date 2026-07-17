@@ -29,7 +29,7 @@ export default async function financialRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const supplier = await financialService.createSupplier(body.data)
+      const supplier = await financialService.createSupplier(req.user, body.data)
       return reply.status(201).send({ data: supplier })
     },
   )
@@ -80,7 +80,7 @@ export default async function financialRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const supplier = await financialService.updateSupplier(id, body.data)
+      const supplier = await financialService.updateSupplier(req.user, id, body.data)
       return reply.status(200).send({ data: supplier })
     },
   )
@@ -109,7 +109,7 @@ export default async function financialRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const accountPayable = await financialService.createAccountPayable(body.data)
+      const accountPayable = await financialService.createAccountPayable(req.user, body.data)
       return reply.status(201).send({ data: accountPayable })
     },
   )
@@ -170,7 +170,7 @@ export default async function financialRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const accountPayable = await financialService.updateAccountPayable(id, body.data)
+      const accountPayable = await financialService.updateAccountPayable(req.user, id, body.data)
       return reply.status(200).send({ data: accountPayable })
     },
   )
@@ -189,7 +189,7 @@ export default async function financialRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const accountPayable = await financialService.payAccountPayable(id, body.data)
+      const accountPayable = await financialService.payAccountPayable(req.user, id, body.data)
       return reply.status(200).send({ data: accountPayable })
     },
   )

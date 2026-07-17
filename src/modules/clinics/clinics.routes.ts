@@ -105,7 +105,7 @@ export default async function clinicsRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const clinic = await clinicsService.update(id, body.data)
+      const clinic = await clinicsService.update(req.user, id, body.data)
       return reply.status(200).send({ data: clinic })
     },
   )
@@ -116,7 +116,7 @@ export default async function clinicsRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      await clinicsService.deactivate(id)
+      await clinicsService.deactivate(req.user, id)
       return reply.status(204).send()
     },
   )

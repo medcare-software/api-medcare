@@ -158,7 +158,7 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      await doctorsService.deactivate(id)
+      await doctorsService.deactivate(req.user, id)
       return reply.status(204).send()
     },
   )

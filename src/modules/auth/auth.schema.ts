@@ -6,11 +6,18 @@ const EmailLoginSchema = z.object({
   password: z.string().min(1, { message: 'Senha é obrigatória' }),
 })
 
-// Login por CPF ou e-mail num único campo — app-medcare (paciente/família/cuidador).
-// Mantido separado de EmailLoginSchema (que outros clientes ainda podem enviar).
+// Login por CPF, e-mail ou CNPJ num único campo — app-medcare (paciente/família/
+// cuidador) e clínica/admin (web-medcare). Mantido separado de EmailLoginSchema
+// (que outros clientes ainda podem enviar).
+//
+// `portal` desambigua login por e-mail (CPF/CNPJ já são inequívocos por si só)
+// quando o mesmo e-mail acumula mais de um papel — ver auth.service.ts. Opcional
+// por compatibilidade retroativa: se omitido, mantém o comportamento antigo de
+// confiar no User.role armazenado.
 const IdentifierLoginSchema = z.object({
   identifier: z.string().min(1, { message: 'Informe seu CPF ou e-mail' }),
   password: z.string().min(1, { message: 'Senha é obrigatória' }),
+  portal: z.enum(['app', 'clinic', 'admin']).optional(),
 })
 
 // Login por CRM — médico (web-medcare)

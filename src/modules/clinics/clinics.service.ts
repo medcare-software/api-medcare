@@ -13,10 +13,12 @@ import {
   maskCnpj,
   maskCpf,
   onlyDigits,
+  recordAuditEvent,
   recordSensitiveAccess,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
+import { plansRepository } from '../plans/plans.repository.js'
 import { plansService } from '../plans/plans.service.js'
 import { clinicsRepository } from './clinics.repository.js'
 import type {
@@ -70,10 +72,55 @@ async function resolveScopedClinicId(user: AuthUser, clinicId: string): Promise<
   return clinicId
 }
 
+// Barra ativar um vínculo (novo ou reativado) que estouraria Plan.includedDoctors
+// quando o plano não permite médico extra (extraMemberFee nulo). Planos sem limite
+// configurado (includedDoctors nulo) ou clínicas sem plano não são afetados.
+async function assertWithinDoctorLimit(clinicId: string) {
+  const clinic = await clinicsRepository.findById(clinicId)
+  if (!clinic?.planId) return
+
+  const plan = await plansRepository.findById(clinic.planId)
+  if (!plan || plan.includedDoctors == null) return
+
+  const activeCount = await clinicsRepository.countActiveDoctorLinks(clinicId)
+  const wouldExceed = activeCount + 1 > plan.includedDoctors
+  if (wouldExceed && plan.extraMemberFee == null) {
+    throw new AppError({
+      code: 'PLAN_LIMIT_REACHED',
+      message:
+        'Limite de médicos do plano atingido. Faça upgrade do plano para adicionar mais médicos.',
+    })
+  }
+}
+
+// Chamado após todo vínculo/desvínculo de médico — mantém Subscription.extraDoctorsCount
+// consistente com o número de médicos ativos acima de Plan.includedDoctors. Sem limite
+// configurado ou sem assinatura ativa/atrasada, não há o que recalcular.
+async function recalculateExtraDoctorsCharge(clinicId: string) {
+  const clinic = await clinicsRepository.findById(clinicId)
+  if (!clinic?.planId) return
+
+  const plan = await plansRepository.findById(clinic.planId)
+  if (!plan || plan.includedDoctors == null) return
+
+  const activeCount = await clinicsRepository.countActiveDoctorLinks(clinicId)
+  const extraCount = Math.max(activeCount - plan.includedDoctors, 0)
+
+  const subscription = await plansRepository.findActiveOrLateSubscription({ clinicId })
+  if (subscription) {
+    await plansRepository.setExtraDoctorsCount(subscription.id, extraCount)
+  }
+}
+
 export const clinicsService = {
   async create(user: AuthUser, input: CreateClinicInput) {
+    // E-mail já usado por alguém que já tem perfil de clínica (dono de OUTRA
+    // clínica) continua bloqueado. Mas se o e-mail pertence a um User sem
+    // ClinicAdminProfile (ex.: paciente do app-medcare), o perfil de admin é
+    // anexado a esse User existente em vez de bloquear — mesma pessoa pode
+    // acumular um papel do app com um papel de dono de clínica.
     const existingAdmin = await clinicsRepository.findUserByEmail(input.adminEmail)
-    if (existingAdmin) {
+    if (existingAdmin?.clinicAdminProfile) {
       throw new AppError({ code: 'CONFLICT', message: 'E-mail do administrador já cadastrado' })
     }
 
@@ -84,30 +131,48 @@ export const clinicsService = {
       throw new AppError({ code: 'CONFLICT', message: 'CNPJ já cadastrado' })
     }
 
-    const temporaryPassword = generateTemporaryPassword()
-    const adminPasswordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
+    let clinic: Clinic
+    if (existingAdmin) {
+      clinic = await clinicsRepository.createWithExistingAdmin({
+        legalNameEncrypted: encryptField(input.legalName),
+        tradeName: input.tradeName,
+        cnpjEncrypted: encryptField(cnpjDigits),
+        cnpjHash,
+        phone: input.phone,
+        address: input.address as Prisma.InputJsonValue,
+        ...(input.email !== undefined && { email: input.email }),
+        ...(input.planId !== undefined && { planId: input.planId }),
+        adminUserId: existingAdmin.id,
+      })
+    } else {
+      const temporaryPassword = generateTemporaryPassword()
+      const adminPasswordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
 
-    const clinic = await clinicsRepository.createWithAdmin({
-      legalNameEncrypted: encryptField(input.legalName),
-      tradeName: input.tradeName,
-      cnpjEncrypted: encryptField(cnpjDigits),
-      cnpjHash,
-      email: input.email,
-      phone: input.phone,
-      address: input.address as Prisma.InputJsonValue,
-      ...(input.planId !== undefined && { planId: input.planId }),
-      adminName: input.adminName,
-      adminEmail: input.adminEmail,
-      adminPasswordHash,
-      ...(input.adminPhone !== undefined && { adminPhone: input.adminPhone }),
-    })
+      clinic = await clinicsRepository.createWithAdmin({
+        legalNameEncrypted: encryptField(input.legalName),
+        tradeName: input.tradeName,
+        cnpjEncrypted: encryptField(cnpjDigits),
+        cnpjHash,
+        phone: input.phone,
+        address: input.address as Prisma.InputJsonValue,
+        ...(input.email !== undefined && { email: input.email }),
+        ...(input.planId !== undefined && { planId: input.planId }),
+        adminName: input.adminName,
+        adminEmail: input.adminEmail,
+        adminPasswordHash,
+        ...(input.adminPhone !== undefined && { adminPhone: input.adminPhone }),
+      })
 
-    try {
-      const template = accountWelcomeTemplate(input.adminName, temporaryPassword)
-      await sendMail({ to: input.adminEmail, ...template })
-    } catch (err) {
-      // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
-      console.error(`[clinics] Falha ao enviar e-mail de boas-vindas para ${input.adminEmail}`, err)
+      try {
+        const template = accountWelcomeTemplate(input.adminName, temporaryPassword)
+        await sendMail({ to: input.adminEmail, ...template })
+      } catch (err) {
+        // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
+        console.error(
+          `[clinics] Falha ao enviar e-mail de boas-vindas para ${input.adminEmail}`,
+          err,
+        )
+      }
     }
 
     // Assinatura inicial é opcional — só é criada se plano + forma de pagamento +
@@ -123,6 +188,12 @@ export const clinicsService = {
       })
     }
 
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CREATE_CLINIC',
+      targetType: 'Clinic',
+      targetId: clinic.id,
+    })
     return revealClinic(clinic)
   },
 
@@ -173,7 +244,7 @@ export const clinicsService = {
     return revealClinic(clinic)
   },
 
-  async update(id: string, input: UpdateClinicInput) {
+  async update(user: AuthUser, id: string, input: UpdateClinicInput) {
     const clinic = await clinicsRepository.findById(id)
     if (!clinic) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Clínica não encontrada' })
@@ -203,6 +274,12 @@ export const clinicsService = {
         ...cnpjFields,
       }),
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UPDATE_CLINIC',
+      targetType: 'Clinic',
+      targetId: id,
+    })
     return revealClinic(updated)
   },
 
@@ -220,12 +297,18 @@ export const clinicsService = {
     return revealClinic(updated)
   },
 
-  async deactivate(id: string) {
+  async deactivate(user: AuthUser, id: string) {
     const clinic = await clinicsRepository.findById(id)
     if (!clinic) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Clínica não encontrada' })
     }
     await clinicsRepository.deactivateTx(id)
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'DEACTIVATE_CLINIC',
+      targetType: 'Clinic',
+      targetId: id,
+    })
   },
 
   async listDoctors(user: AuthUser, clinicId: string, query: ListClinicDoctorsQuery) {
@@ -260,7 +343,17 @@ export const clinicsService = {
       throw new AppError({ code: 'CONFLICT', message: 'Médico já vinculado a esta clínica' })
     }
 
-    return clinicsRepository.upsertLink(scopedClinicId, input.doctorId)
+    await assertWithinDoctorLimit(scopedClinicId)
+    const link = await clinicsRepository.upsertLink(scopedClinicId, input.doctorId)
+    await recalculateExtraDoctorsCharge(scopedClinicId)
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'LINK_DOCTOR_TO_CLINIC',
+      targetType: 'Clinic',
+      targetId: scopedClinicId,
+      metadata: { doctorId: input.doctorId },
+    })
+    return link
   },
 
   async toggleDoctorLink(
@@ -276,6 +369,21 @@ export const clinicsService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Vínculo não encontrado' })
     }
 
-    return clinicsRepository.toggleLink(scopedClinicId, doctorId, input.active)
+    // Reativar um vínculo desligado também precisa respeitar o limite do plano —
+    // sem essa checagem, reativar contornaria o bloqueio de linkDoctor.
+    if (input.active && !link.active) {
+      await assertWithinDoctorLimit(scopedClinicId)
+    }
+
+    const updated = await clinicsRepository.toggleLink(scopedClinicId, doctorId, input.active)
+    await recalculateExtraDoctorsCharge(scopedClinicId)
+    await recordAuditEvent({
+      actorId: user.id,
+      action: input.active ? 'REACTIVATE_DOCTOR_LINK' : 'DEACTIVATE_DOCTOR_LINK',
+      targetType: 'Clinic',
+      targetId: scopedClinicId,
+      metadata: { doctorId },
+    })
+    return updated
   },
 }

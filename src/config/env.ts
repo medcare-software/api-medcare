@@ -119,6 +119,26 @@ const envSchema = z.object({
   // processar o callback do Google — appmedcare:// já é usado em outros fluxos
   // (ver reset-password), reaproveitado aqui.
   GOOGLE_OAUTH_APP_RETURN_SCHEME: z.string().default('appmedcare://gmail-oauth-callback'),
+
+  // ── Integração App Store Connect (relatório de downloads — Fase 7.2) ────────
+  // Opcionais de propósito, como SMTP/Anthropic/Gmail: sem credenciais em dev/
+  // local, o job de sincronização pula a plataforma e loga um aviso em vez de
+  // falhar — ver src/modules/store-analytics/store-analytics.service.ts.
+  APP_STORE_CONNECT_KEY_ID: z.string().optional(),
+  APP_STORE_CONNECT_ISSUER_ID: z.string().optional(),
+  // Conteúdo do arquivo .p8 (chave privada EC), com quebras de linha reais ou
+  // como "\n" literal (normalizado no client) — nunca commitar o valor real.
+  APP_STORE_CONNECT_PRIVATE_KEY: z.string().optional(),
+  APP_STORE_CONNECT_VENDOR_NUMBER: z.string().optional(),
+  // Reaproveita o mesmo ID já usado em app-medcare/eas.json (ascAppId) para
+  // identificar o app nos relatórios de vendas.
+  APP_STORE_CONNECT_APP_ID: z.string().default('6786394968'),
+
+  // ── Integração Google Play (relatório de downloads — Fase 7.2) ──────────────
+  // JSON completo da service account (Play Developer Reporting API), como
+  // string de uma linha — nunca commitar o valor real.
+  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

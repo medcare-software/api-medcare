@@ -19,6 +19,7 @@ import {
   hashForLookup,
   maskCpf,
   onlyDigits,
+  recordAuditEvent,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { issuePasswordResetSessionToken } from '../auth/auth.service.js'
@@ -61,6 +62,7 @@ export const familiesService = {
       email: input.email,
       passwordHash,
       ...(input.phone !== undefined && { phone: input.phone }),
+      ...(input.state !== undefined && { state: input.state.toUpperCase() }),
       cpfEncrypted: encryptField(cpfDigits),
       cpfHash,
       fullNameEncrypted: encryptField(input.fullName),
@@ -101,7 +103,17 @@ export const familiesService = {
     await assertFamilyInScope(user, familyId)
 
     if (input.email) {
-      return createMemberWithLogin(fastify, user, familyId, { ...input, email: input.email })
+      const created = await createMemberWithLogin(fastify, user, familyId, {
+        ...input,
+        email: input.email,
+      })
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'CREATE_FAMILY_MEMBER',
+        targetType: 'FamilyMember',
+        targetId: created.id,
+      })
+      return created
     }
 
     const cpfFields = await resolveCpfFields(input.cpf)
@@ -112,6 +124,12 @@ export const familiesService = {
       birthDate: input.birthDate,
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
       ...cpfFields,
+    })
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CREATE_FAMILY_MEMBER',
+      targetType: 'FamilyMember',
+      targetId: member.id,
     })
     return toMemberDetail(member, user.role)
   },

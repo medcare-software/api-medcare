@@ -12,6 +12,7 @@ import {
   maskCnpj,
   maskCpf,
   onlyDigits,
+  recordAuditEvent,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
@@ -58,8 +59,13 @@ async function resolveScopedDoctor(user: AuthUser, id: string) {
 
 export const doctorsService = {
   async create(user: AuthUser, input: CreateDoctorInput) {
+    // E-mail já usado por alguém que já tem perfil de médico continua bloqueado.
+    // Mas se o e-mail pertence a um User sem perfil de médico (ex.: paciente do
+    // app-medcare), o perfil de médico é anexado a esse User existente em vez de
+    // bloquear — mesma pessoa pode acumular um papel do app com o de médico. O
+    // CPF do formulário é ignorado nesse caso (mantém o CPF já cadastrado do User).
     const existingUser = await doctorsRepository.findUserByEmail(input.email)
-    if (existingUser) {
+    if (existingUser?.doctor) {
       throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
     }
 
@@ -69,29 +75,40 @@ export const doctorsService = {
       throw new AppError({ code: 'CONFLICT', message: 'CRM já cadastrado' })
     }
 
-    const temporaryPassword = generateTemporaryPassword()
-    const passwordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
-    const cpfDigits = onlyDigits(input.cpf)
+    let doctor: Awaited<ReturnType<typeof doctorsRepository.createWithUser>>
+    if (existingUser) {
+      doctor = await doctorsRepository.createWithExistingUser({
+        userId: existingUser.id,
+        crmNumber: input.crmNumber,
+        crmState,
+        specialties: input.specialties,
+        ...(input.planId !== undefined && { planId: input.planId }),
+      })
+    } else {
+      const temporaryPassword = generateTemporaryPassword()
+      const passwordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
+      const cpfDigits = onlyDigits(input.cpf)
 
-    const doctor = await doctorsRepository.createWithUser({
-      name: input.name,
-      email: input.email,
-      passwordHash,
-      ...(input.phone !== undefined && { phone: input.phone }),
-      cpfEncrypted: encryptField(cpfDigits),
-      cpfHash: hashForLookup(cpfDigits),
-      crmNumber: input.crmNumber,
-      crmState,
-      specialties: input.specialties,
-      ...(input.planId !== undefined && { planId: input.planId }),
-    })
+      doctor = await doctorsRepository.createWithUser({
+        name: input.name,
+        email: input.email,
+        passwordHash,
+        ...(input.phone !== undefined && { phone: input.phone }),
+        cpfEncrypted: encryptField(cpfDigits),
+        cpfHash: hashForLookup(cpfDigits),
+        crmNumber: input.crmNumber,
+        crmState,
+        specialties: input.specialties,
+        ...(input.planId !== undefined && { planId: input.planId }),
+      })
 
-    try {
-      const template = accountWelcomeTemplate(input.name, temporaryPassword)
-      await sendMail({ to: input.email, ...template })
-    } catch (err) {
-      // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
-      console.error(`[doctors] Falha ao enviar e-mail de boas-vindas para ${input.email}`, err)
+      try {
+        const template = accountWelcomeTemplate(input.name, temporaryPassword)
+        await sendMail({ to: input.email, ...template })
+      } catch (err) {
+        // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
+        console.error(`[doctors] Falha ao enviar e-mail de boas-vindas para ${input.email}`, err)
+      }
     }
 
     // Assinatura inicial é opcional — só é criada se plano + forma de pagamento +
@@ -107,6 +124,12 @@ export const doctorsService = {
       })
     }
 
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CREATE_DOCTOR',
+      targetType: 'Doctor',
+      targetId: doctor.id,
+    })
     return maskDoctorForViewer(doctor)
   },
 
@@ -175,6 +198,12 @@ export const doctorsService = {
         ...(input.crmState && { crmState: input.crmState.toUpperCase() }),
       }),
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UPDATE_DOCTOR',
+      targetType: 'Doctor',
+      targetId: id,
+    })
     return maskDoctorForViewer(updated)
   },
 
@@ -190,12 +219,18 @@ export const doctorsService = {
     return maskDoctorForViewer(updated)
   },
 
-  async deactivate(id: string) {
+  async deactivate(user: AuthUser, id: string) {
     const doctor = await doctorsRepository.findById(id)
     if (!doctor) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Médico não encontrado' })
     }
     await doctorsRepository.deactivateTx(doctor.id, doctor.userId)
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'DEACTIVATE_DOCTOR',
+      targetType: 'Doctor',
+      targetId: id,
+    })
   },
 
   // ── Aba "Atividade" (visão da clínica) ──────────────────────────────────────

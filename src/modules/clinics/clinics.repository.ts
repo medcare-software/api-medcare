@@ -25,7 +25,7 @@ type CreateClinicWithAdminData = {
   tradeName: string
   cnpjEncrypted: Buffer<ArrayBuffer>
   cnpjHash: string
-  email: string
+  email?: string
   phone: string
   address: Prisma.InputJsonValue
   planId?: string
@@ -35,9 +35,24 @@ type CreateClinicWithAdminData = {
   adminPhone?: string
 }
 
+type CreateClinicWithExistingAdminData = {
+  legalNameEncrypted: Buffer<ArrayBuffer>
+  tradeName: string
+  cnpjEncrypted: Buffer<ArrayBuffer>
+  cnpjHash: string
+  email?: string
+  phone: string
+  address: Prisma.InputJsonValue
+  planId?: string
+  adminUserId: string
+}
+
 export const clinicsRepository = {
   findUserByEmail(email: string) {
-    return db.user.findUnique({ where: { email: email.toLowerCase() } })
+    return db.user.findUnique({
+      where: { email: email.toLowerCase() },
+      include: { clinicAdminProfile: true },
+    })
   },
 
   findByCnpjHash(cnpjHash: string) {
@@ -116,6 +131,33 @@ export const clinicsRepository = {
     })
   },
 
+  // E-mail do admin já pertence a um User existente (ex.: paciente do app-medcare)
+  // sem perfil de clínica — anexa o novo perfil a esse User em vez de criar um
+  // segundo User com o mesmo e-mail (email é @unique). Ver clinics.service.ts#create.
+  createWithExistingAdmin(input: CreateClinicWithExistingAdminData) {
+    return db.$transaction(async (tx) => {
+      const clinic = await tx.clinic.create({
+        data: omitUndefined({
+          legalNameEncrypted: input.legalNameEncrypted,
+          tradeName: input.tradeName,
+          cnpjEncrypted: input.cnpjEncrypted,
+          cnpjHash: input.cnpjHash,
+          email: input.email,
+          phone: input.phone,
+          address: input.address,
+          planId: input.planId,
+          status: 'ACTIVE',
+        }),
+      })
+
+      await tx.clinicAdminProfile.create({
+        data: { userId: input.adminUserId, clinicId: clinic.id },
+      })
+
+      return clinic
+    })
+  },
+
   update(id: string, data: ClinicUpdateData) {
     return db.clinic.update({ where: { id }, data: omitUndefined(data) })
   },
@@ -180,5 +222,9 @@ export const clinicsRepository = {
       where: { clinicId_doctorId: { clinicId, doctorId } },
       data: { active },
     })
+  },
+
+  countActiveDoctorLinks(clinicId: string) {
+    return db.clinicDoctorLink.count({ where: { clinicId, active: true } })
   },
 }

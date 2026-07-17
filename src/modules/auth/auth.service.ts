@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { env } from '../../config/env.js'
 import { AppError } from '../../shared/errors/index.js'
 import { passwordResetCodeTemplate, sendMail } from '../../shared/mail/index.js'
-import { hashForLookup, onlyDigits } from '../../shared/security/index.js'
+import { hashForLookup, onlyDigits, recordAuditEvent } from '../../shared/security/index.js'
 import type { PasswordResetSessionPayload } from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
 import { authRepository } from './auth.repository.js'
@@ -40,20 +40,60 @@ export const authService = {
 
   // app-medcare (CPF ou e-mail) e clínica/web-medcare (e-mail ou CNPJ) num único
   // campo — decide pelo formato do valor (CPF tem 11 dígitos, CNPJ tem 14).
+  //
+  // Uma mesma pessoa pode acumular um papel do app-medcare (PATIENT_ADMIN/
+  // FAMILY_MEMBER/CAREGIVER) com um papel do web-medcare (CLINIC_ADMIN/DOCTOR),
+  // já que User.email é único mas as tabelas de perfil (Doctor/ClinicAdminProfile)
+  // são relações independentes — ver clinics.service.ts/doctors.service.ts. Login
+  // por CNPJ já é inequívoco (só resolve via ClinicAdminProfile); login por CRM
+  // (validateCrmLogin) idem. Só o login por e-mail/CPF é ambíguo nesse cenário,
+  // por isso o `portal` informado pela tela de login decide qual vínculo exigir
+  // em vez de confiar cegamente em User.role (que só guarda 1 valor).
   async validateIdentifierLogin(input: IdentifierLoginInput) {
     const isEmail = input.identifier.includes('@')
     const digits = onlyDigits(input.identifier)
+
+    if (!isEmail && digits.length === 14) {
+      const user = await authRepository.findClinicAdminByCnpjHash(hashForLookup(digits))
+      const verifiedUser = await assertCredentials(user, input.password)
+      return { ...verifiedUser, role: 'CLINIC_ADMIN' as const }
+    }
+
     const user = isEmail
       ? await authRepository.findUserByEmail(input.identifier)
-      : digits.length === 14
-        ? await authRepository.findClinicAdminByCnpjHash(hashForLookup(digits))
-        : await authRepository.findUserByCpfHash(hashForLookup(digits))
-    return assertCredentials(user, input.password)
+      : await authRepository.findUserByCpfHash(hashForLookup(digits))
+    const verifiedUser = await assertCredentials(user, input.password)
+
+    if (input.portal === 'clinic') {
+      if (!verifiedUser.clinicAdminProfile) {
+        throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas' })
+      }
+      return { ...verifiedUser, role: 'CLINIC_ADMIN' as const }
+    }
+
+    if (input.portal === 'admin') {
+      if (verifiedUser.role !== 'PLATFORM_ADMIN') {
+        throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas' })
+      }
+      return verifiedUser
+    }
+
+    if (input.portal === 'app') {
+      const appRoles: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER']
+      if (!appRoles.includes(verifiedUser.role)) {
+        throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas' })
+      }
+      return verifiedUser
+    }
+
+    // `portal` omitido — compatibilidade retroativa, comportamento anterior.
+    return verifiedUser
   },
 
   async validateCrmLogin(input: CrmLoginInput) {
     const user = await authRepository.findUserByCrm(input.crmNumber, input.crmState)
-    return assertCredentials(user, input.password)
+    const verifiedUser = await assertCredentials(user, input.password)
+    return { ...verifiedUser, role: 'DOCTOR' as const }
   },
 
   // ── Sessão / Refresh Token ─────────────────────────────────────────────────
@@ -112,6 +152,12 @@ export const authService = {
 
   async recordLogin(userId: string) {
     await authRepository.updateLastLogin(userId)
+    await recordAuditEvent({
+      actorId: userId,
+      action: 'LOGIN',
+      targetType: 'User',
+      targetId: userId,
+    })
   },
 
   async me(userId: string) {

@@ -14,6 +14,7 @@ export const ErrorCode = {
   // ── Recursos ──────────────────────────────────────────
   NOT_FOUND: 'NOT_FOUND',
   CONFLICT: 'CONFLICT',
+  PLAN_LIMIT_REACHED: 'PLAN_LIMIT_REACHED',
 
   // ── Validação ─────────────────────────────────────────
   VALIDATION_ERROR: 'VALIDATION_ERROR',

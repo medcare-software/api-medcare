@@ -39,10 +39,14 @@ export const UpdatePlanSchema = z.object({
 
 export const ListPlansQuerySchema = z.object({
   type: PlanTypeEnum.optional(),
+  status: StatusEnum.optional(),
+  search: z.string().min(1).optional(),
   includeInactive: z
     .enum(['true', 'false'])
     .optional()
     .transform((value) => (value === undefined ? undefined : value === 'true')),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
 })
 
 export const CreateSubscriptionSchema = z

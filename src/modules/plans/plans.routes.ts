@@ -14,7 +14,7 @@ import { plansService } from './plans.service.js'
 const SUBSCRIBERS = ['DOCTOR', 'CLINIC_ADMIN', 'PLATFORM_ADMIN'] as const
 
 export default async function plansRoutes(fastify: FastifyInstance) {
-  // GET /plans?type=&includeInactive= — catálogo, visível para qualquer autenticado
+  // GET /plans?type=&includeInactive=&page=&pageSize= — catálogo, visível para qualquer autenticado
   fastify.get('/plans', { preHandler: [authenticate] }, async (req, reply) => {
     const query = ListPlansQuerySchema.safeParse(req.query)
     if (!query.success) {
@@ -24,8 +24,11 @@ export default async function plansRoutes(fastify: FastifyInstance) {
         details: query.error.issues,
       })
     }
-    const plans = await plansService.list(req.user, query.data)
-    return reply.status(200).send({ data: plans })
+    const { items, total } = await plansService.list(req.user, query.data)
+    return reply.status(200).send({
+      data: items,
+      meta: { total, page: query.data.page, pageSize: query.data.pageSize },
+    })
   })
 
   // GET /plans/:id
@@ -48,7 +51,7 @@ export default async function plansRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const plan = await plansService.create(body.data)
+      const plan = await plansService.create(req.user, body.data)
       return reply.status(201).send({ data: plan })
     },
   )
@@ -67,7 +70,7 @@ export default async function plansRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const plan = await plansService.update(id, body.data)
+      const plan = await plansService.update(req.user, id, body.data)
       return reply.status(200).send({ data: plan })
     },
   )
@@ -129,7 +132,7 @@ export default async function plansRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const subscription = await plansService.updateSubscription(id, body.data)
+      const subscription = await plansService.updateSubscription(req.user, id, body.data)
       return reply.status(200).send({ data: subscription })
     },
   )

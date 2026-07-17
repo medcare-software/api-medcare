@@ -8,6 +8,7 @@ import {
   maskCnpj,
   maskCpf,
   onlyDigits,
+  recordAuditEvent,
   recordSensitiveAccess,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
@@ -61,7 +62,7 @@ function revealSupplier(supplier: Supplier) {
 const OPEN_ACCOUNT_PAYABLE_STATUSES = ['PAID', 'PAID_LATE']
 
 export const financialService = {
-  async createSupplier(input: CreateSupplierInput) {
+  async createSupplier(user: AuthUser, input: CreateSupplierInput) {
     const digits = onlyDigits(input.document)
     const documentHash = hashForLookup(digits)
     const existing = await financialRepository.findSupplierByDocumentHash(documentHash)
@@ -79,6 +80,12 @@ export const financialService = {
       email: input.email,
       phone: input.phone,
       category: input.category,
+    })
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CREATE_SUPPLIER',
+      targetType: 'Supplier',
+      targetId: supplier.id,
     })
     return revealSupplier(supplier)
   },
@@ -113,7 +120,7 @@ export const financialService = {
     return revealSupplier(supplier)
   },
 
-  async updateSupplier(id: string, input: UpdateSupplierInput) {
+  async updateSupplier(user: AuthUser, id: string, input: UpdateSupplierInput) {
     const supplier = await financialRepository.findSupplierById(id)
     if (!supplier) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Fornecedor não encontrado' })
@@ -144,6 +151,12 @@ export const financialService = {
         ...documentFields,
       }),
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UPDATE_SUPPLIER',
+      targetType: 'Supplier',
+      targetId: id,
+    })
     return revealSupplier(updated)
   },
 
@@ -159,17 +172,24 @@ export const financialService = {
     await financialRepository.deactivateSupplier(id)
   },
 
-  async createAccountPayable(input: CreateAccountPayableInput) {
+  async createAccountPayable(user: AuthUser, input: CreateAccountPayableInput) {
     const supplier = await financialRepository.findSupplierById(input.supplierId)
     if (!supplier || supplier.status !== 'ACTIVE') {
       throw new AppError({ code: 'NOT_FOUND', message: 'Fornecedor não encontrado ou inativo' })
     }
-    return financialRepository.createAccountPayable(
+    const accountPayable = await financialRepository.createAccountPayable(
       omitUndefined({
         ...input,
         recurrence: input.recurrence as Prisma.InputJsonValue | undefined,
       }),
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CREATE_ACCOUNT_PAYABLE',
+      targetType: 'AccountPayable',
+      targetId: accountPayable.id,
+    })
+    return accountPayable
   },
 
   async listAccountsPayable(query: ListAccountsPayableQuery) {
@@ -197,7 +217,7 @@ export const financialService = {
     return accountPayable
   },
 
-  async updateAccountPayable(id: string, input: UpdateAccountPayableInput) {
+  async updateAccountPayable(user: AuthUser, id: string, input: UpdateAccountPayableInput) {
     const accountPayable = await financialRepository.findAccountPayableById(id)
     if (!accountPayable) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Conta a pagar não encontrada' })
@@ -205,16 +225,23 @@ export const financialService = {
     if (OPEN_ACCOUNT_PAYABLE_STATUSES.includes(accountPayable.status)) {
       throw new AppError({ code: 'CONFLICT', message: 'Conta paga não pode ser editada' })
     }
-    return financialRepository.updateAccountPayable(
+    const updated = await financialRepository.updateAccountPayable(
       id,
       omitUndefined({
         ...input,
         recurrence: input.recurrence as Prisma.InputJsonValue | undefined,
       }),
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UPDATE_ACCOUNT_PAYABLE',
+      targetType: 'AccountPayable',
+      targetId: id,
+    })
+    return updated
   },
 
-  async payAccountPayable(id: string, input: MarkPaidInput) {
+  async payAccountPayable(user: AuthUser, id: string, input: MarkPaidInput) {
     const accountPayable = await financialRepository.findAccountPayableById(id)
     if (!accountPayable) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Conta a pagar não encontrada' })
@@ -226,10 +253,17 @@ export const financialService = {
     const paidAt = new Date()
     const status = paidAt <= accountPayable.dueDate ? 'PAID' : 'PAID_LATE'
 
-    return financialRepository.markPaid(
+    const updated = await financialRepository.markPaid(
       id,
       omitUndefined({ status, paidAt, receiptFileId: input.receiptFileId }),
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'PAY_ACCOUNT_PAYABLE',
+      targetType: 'AccountPayable',
+      targetId: id,
+    })
+    return updated
   },
 
   async deleteAccountPayable(id: string) {

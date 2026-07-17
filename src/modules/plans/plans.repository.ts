@@ -12,6 +12,8 @@ import { omitUndefined } from '../../shared/utils/index.js'
 
 type PlanListFilters = {
   type?: PlanType
+  status?: UserStatus
+  search?: string
   includeInactive?: boolean
 }
 
@@ -58,13 +60,30 @@ type UpdateSubscriptionData = {
 }
 
 export const plansRepository = {
-  findMany(filters: PlanListFilters) {
+  findMany(filters: PlanListFilters, pagination: { skip: number; take: number }) {
     return db.plan.findMany({
       where: {
         ...(filters.type && { type: filters.type }),
-        ...(!filters.includeInactive && { status: 'ACTIVE' }),
+        ...(filters.status
+          ? { status: filters.status }
+          : !filters.includeInactive && { status: 'ACTIVE' }),
+        ...(filters.search && { name: { contains: filters.search, mode: 'insensitive' } }),
       },
       orderBy: { createdAt: 'desc' },
+      skip: pagination.skip,
+      take: pagination.take,
+    })
+  },
+
+  count(filters: PlanListFilters) {
+    return db.plan.count({
+      where: {
+        ...(filters.type && { type: filters.type }),
+        ...(filters.status
+          ? { status: filters.status }
+          : !filters.includeInactive && { status: 'ACTIVE' }),
+        ...(filters.search && { name: { contains: filters.search, mode: 'insensitive' } }),
+      },
     })
   },
 
@@ -137,5 +156,11 @@ export const plansRepository = {
 
   cancelSubscription(id: string) {
     return db.subscription.update({ where: { id }, data: { status: 'CANCELLED' } })
+  },
+
+  // Recalculado internamente a cada vínculo/desvínculo de médico — nunca exposto
+  // como campo editável via PATCH /subscriptions/:id. Ver clinics.service.ts.
+  setExtraDoctorsCount(id: string, extraDoctorsCount: number) {
+    return db.subscription.update({ where: { id }, data: { extraDoctorsCount } })
   },
 }

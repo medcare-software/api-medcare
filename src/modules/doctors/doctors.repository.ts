@@ -38,9 +38,20 @@ type CreateDoctorWithUserData = {
   planId?: string
 }
 
+type CreateDoctorWithExistingUserData = {
+  userId: string
+  crmNumber: string
+  crmState: string
+  specialties: string[]
+  planId?: string
+}
+
 export const doctorsRepository = {
   findUserByEmail(email: string) {
-    return db.user.findUnique({ where: { email: email.toLowerCase() } })
+    return db.user.findUnique({
+      where: { email: email.toLowerCase() },
+      include: { doctor: true },
+    })
   },
 
   findByCrm(crmNumber: string, crmState: string) {
@@ -146,6 +157,23 @@ export const doctorsRepository = {
         }),
         include: doctorInclude,
       })
+    })
+  },
+
+  // E-mail já pertence a um User existente (ex.: paciente do app-medcare) sem
+  // perfil de médico — anexa o novo perfil de médico a esse User em vez de criar
+  // um segundo User com o mesmo e-mail (email é @unique). Ver doctors.service.ts#create.
+  createWithExistingUser(input: CreateDoctorWithExistingUserData) {
+    return db.doctor.create({
+      data: omitUndefined({
+        userId: input.userId,
+        crmNumber: input.crmNumber,
+        crmState: input.crmState,
+        specialties: input.specialties,
+        planId: input.planId,
+        status: 'ACTIVE',
+      }),
+      include: doctorInclude,
     })
   },
 

@@ -36,6 +36,7 @@ export class AppError extends Error {
       MEDICAL_ACCESS_REQUIRED: 403,
       NOT_FOUND: 404,
       CONFLICT: 409,
+      PLAN_LIMIT_REACHED: 409,
       ACCESS_CODE_INVALID: 400,
       ACCESS_CODE_EXPIRED: 410,
       VALIDATION_ERROR: 400,

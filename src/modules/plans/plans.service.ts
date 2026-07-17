@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 
 import { resolveClinicId, resolveDoctorId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import { recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { omitUndefined } from '../../shared/utils/index.js'
 import { plansRepository } from './plans.repository.js'
@@ -17,17 +18,25 @@ import type {
 export const plansService = {
   async list(user: AuthUser, query: ListPlansQuery) {
     const includeInactive = user.role === 'PLATFORM_ADMIN' && query.includeInactive === true
-    const plans = await plansRepository.findMany({
+    const filters = {
       ...(query.type && { type: query.type }),
       includeInactive,
-    })
+      ...(includeInactive && query.status && { status: query.status }),
+      ...(query.search && { search: query.search }),
+    }
+    const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
+    const [plans, total] = await Promise.all([
+      plansRepository.findMany(filters, pagination),
+      plansRepository.count(filters),
+    ])
     const activeSubscriptionCounts = await Promise.all(
       plans.map((plan) => plansRepository.countActiveSubscriptions(plan.id)),
     )
-    return plans.map((plan, index) => ({
+    const items = plans.map((plan, index) => ({
       ...plan,
       activeSubscriptionsCount: activeSubscriptionCounts[index],
     }))
+    return { items, total }
   },
 
   async getById(user: AuthUser, id: string) {
@@ -41,8 +50,8 @@ export const plansService = {
     return plan
   },
 
-  async create(input: CreatePlanInput) {
-    return plansRepository.create(
+  async create(user: AuthUser, input: CreatePlanInput) {
+    const plan = await plansRepository.create(
       omitUndefined({
         name: input.name,
         type: input.type,
@@ -53,14 +62,28 @@ export const plansService = {
         extraMemberFee: input.extraMemberFee,
       }),
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CREATE_PLAN',
+      targetType: 'Plan',
+      targetId: plan.id,
+    })
+    return plan
   },
 
-  async update(id: string, input: UpdatePlanInput) {
+  async update(user: AuthUser, id: string, input: UpdatePlanInput) {
     const plan = await plansRepository.findById(id)
     if (!plan) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Plano não encontrado' })
     }
-    return plansRepository.update(id, omitUndefined(input))
+    const updated = await plansRepository.update(id, omitUndefined(input))
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UPDATE_PLAN',
+      targetType: 'Plan',
+      targetId: id,
+    })
+    return updated
   },
 
   async deactivate(id: string) {
@@ -126,7 +149,7 @@ export const plansService = {
       throw new AppError({ code: 'CONFLICT', message: 'Já existe uma assinatura ativa' })
     }
 
-    return plansRepository.createSubscription({
+    const subscription = await plansRepository.createSubscription({
       planId: input.planId,
       ...(doctorId !== undefined && { doctorId }),
       ...(clinicId !== undefined && { clinicId }),
@@ -136,14 +159,29 @@ export const plansService = {
         billingAddress: input.billingAddress as Prisma.InputJsonValue,
       }),
     })
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CREATE_SUBSCRIPTION',
+      targetType: 'Subscription',
+      targetId: subscription.id,
+      metadata: { planId: input.planId },
+    })
+    return subscription
   },
 
-  async updateSubscription(id: string, input: UpdateSubscriptionInput) {
+  async updateSubscription(user: AuthUser, id: string, input: UpdateSubscriptionInput) {
     const subscription = await plansRepository.findSubscriptionById(id)
     if (!subscription) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Assinatura não encontrada' })
     }
-    return plansRepository.updateSubscription(id, omitUndefined(input))
+    const updated = await plansRepository.updateSubscription(id, omitUndefined(input))
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UPDATE_SUBSCRIPTION',
+      targetType: 'Subscription',
+      targetId: id,
+    })
+    return updated
   },
 
   async cancelSubscription(user: AuthUser, id: string) {
@@ -153,7 +191,14 @@ export const plansService = {
     }
 
     if (user.role === 'PLATFORM_ADMIN') {
-      return plansRepository.cancelSubscription(id)
+      const cancelled = await plansRepository.cancelSubscription(id)
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'CANCEL_SUBSCRIPTION',
+        targetType: 'Subscription',
+        targetId: id,
+      })
+      return cancelled
     }
 
     if (user.role === 'DOCTOR') {
@@ -161,7 +206,14 @@ export const plansService = {
       if (subscription.doctorId !== doctorId) {
         throw new AppError({ code: 'NOT_FOUND', message: 'Assinatura não encontrada' })
       }
-      return plansRepository.cancelSubscription(id)
+      const cancelled = await plansRepository.cancelSubscription(id)
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'CANCEL_SUBSCRIPTION',
+        targetType: 'Subscription',
+        targetId: id,
+      })
+      return cancelled
     }
 
     if (user.role === 'CLINIC_ADMIN') {
@@ -169,7 +221,14 @@ export const plansService = {
       if (subscription.clinicId !== clinicId) {
         throw new AppError({ code: 'NOT_FOUND', message: 'Assinatura não encontrada' })
       }
-      return plansRepository.cancelSubscription(id)
+      const cancelled = await plansRepository.cancelSubscription(id)
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'CANCEL_SUBSCRIPTION',
+        targetType: 'Subscription',
+        targetId: id,
+      })
+      return cancelled
     }
 
     throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode cancelar esta assinatura' })

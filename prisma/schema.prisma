@@ -144,6 +144,7 @@ model User {
   passwordHash String
   role         Role
   phone        String?
+  state        String? // UF autodeclarada no cadastro (não sigiloso, sem criptografia)
   cpfEncrypted Bytes? // AES-256-GCM — nunca em texto plano
   cpfHash      String?    @unique // blind index (HMAC) para busca sem decriptar
   status       UserStatus @default(ACTIVE)
@@ -580,7 +581,7 @@ model Clinic {
   tradeName          String
   cnpjEncrypted      Bytes
   cnpjHash           String     @unique
-  email              String
+  email              String?
   phone              String
   address            Json
   planId             String?
@@ -661,6 +662,11 @@ model Subscription {
   billingAddress Json? // endereço de cobrança — pode divergir do endereço da clínica/médico
   status        SubscriptionStatus @default(ACTIVE)
   nextDueDate   DateTime
+  // Só relevante para assinaturas de clínica (Plan.includedDoctors/extraMemberFee) —
+  // recalculado automaticamente a cada vínculo/desvínculo de médico, nunca editado
+  // diretamente pelo usuário. Valor total cobrado = Plan.basePrice +
+  // extraDoctorsCount × Plan.extraMemberFee. Ver clinics.service.ts.
+  extraDoctorsCount Int @default(0)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -744,6 +750,44 @@ model PushToken {
 
   @@index([userId])
   @@map("push_tokens")
+}
+
+// ─────────────────────────────────────────────
+// Snapshots de downloads por loja (App Store Connect / Google Play — Fase 7.2)
+// ─────────────────────────────────────────────
+
+model StoreDownloadSnapshot {
+  id            String   @id @default(cuid())
+  platform      String // "ios" | "android"
+  date          DateTime // dia do relatório (granularidade diária)
+  downloadCount Int
+  source        String // "app_store_connect" | "google_play"
+  createdAt     DateTime @default(now())
+
+  @@unique([platform, date, source])
+  @@index([platform, date])
+  @@map("store_download_snapshots")
+}
+
+// ─────────────────────────────────────────────
+// Funcionários internos da plataforma (diretório, sem login/auth)
+// ─────────────────────────────────────────────
+
+model Employee {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  phone        String?
+  // Rótulo estático do "perfil de acesso" (ex.: "Administrador", "Suporte") —
+  // sem FK real, o sistema de perfis/permissões (ACCESS_PROFILES) continua mockado.
+  profileLabel String
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  @@index([status])
+  @@map("employees")
 }
 
 // ─────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { storeAnalyticsService } from '../store-analytics/store-analytics.service.js'
 import { dashboardRepository } from './dashboard.repository.js'
 import type { DashboardQuery } from './dashboard.schema.js'
 
@@ -18,6 +19,7 @@ export const dashboardService = {
       monthlyRevenue,
       monthlySignups,
       platformBreakdown,
+      storeDownloads,
     ] = await Promise.all([
       dashboardRepository.countClinicsByStatus(),
       dashboardRepository.countDoctorsByStatus(),
@@ -25,6 +27,7 @@ export const dashboardService = {
       dashboardRepository.sumActiveSubscriptionRevenue(),
       dashboardRepository.monthlySignupSeries(query.months),
       dashboardRepository.countByPlatform(),
+      storeAnalyticsService.getAggregatedDownloads({ days: 30 }),
     ])
 
     const activeClinics = countByStatus(clinicsByStatus, 'ACTIVE')
@@ -57,6 +60,9 @@ export const dashboardService = {
         platform: row.platform,
         count: row._count._all,
       })),
+      // Downloads brutos por loja (App Store Connect/Google Play) — dado por
+      // plataforma/período, nunca por usuário individual nem com geografia.
+      storeDownloads,
     }
   },
 }
