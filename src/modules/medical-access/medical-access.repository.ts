@@ -25,7 +25,11 @@ export const medicalAccessRepository = {
   },
 
   activate(id: string, data: ActivateGrantData) {
-    return db.medicalAccessGrant.update({ where: { id }, data: { ...data, status: 'ACTIVE' } })
+    return db.medicalAccessGrant.update({
+      where: { id },
+      data: { ...data, status: 'ACTIVE' },
+      include: { member: { select: { id: true, displayName: true } } },
+    })
   },
 
   markExpired(id: string) {

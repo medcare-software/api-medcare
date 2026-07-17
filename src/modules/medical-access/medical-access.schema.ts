@@ -21,5 +21,11 @@ export const RedeemGrantSchema = z.object({
   doctorId: z.string().min(1).optional(),
 })
 
+// Validação prévia (sem consumir o código) — ver medicalAccessService.checkCode.
+export const CheckGrantSchema = z.object({
+  code: z.string().regex(/^\d{6,8}$/, 'Código deve ter 6 a 8 dígitos'),
+})
+
 export type CreateGrantInput = z.infer<typeof CreateGrantSchema>
 export type RedeemGrantInput = z.infer<typeof RedeemGrantSchema>
+export type CheckGrantInput = z.infer<typeof CheckGrantSchema>

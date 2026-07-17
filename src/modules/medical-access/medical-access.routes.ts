@@ -1,10 +1,29 @@
 import type { FastifyInstance } from 'fastify'
 
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
-import { CreateGrantSchema, RedeemGrantSchema } from './medical-access.schema.js'
+import { CheckGrantSchema, CreateGrantSchema, RedeemGrantSchema } from './medical-access.schema.js'
 import { medicalAccessService } from './medical-access.service.js'
 
 export default async function medicalAccessRoutes(fastify: FastifyInstance) {
+  // POST /medical-access/check — valida o código sem consumi-lo (feedback
+  // imediato antes de escolher o médico responsável, ver InsertAccessCodeModal).
+  fastify.post(
+    '/medical-access/check',
+    { preHandler: [authenticate, authorize('DOCTOR', 'CLINIC_ADMIN')] },
+    async (req, reply) => {
+      const body = CheckGrantSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      await medicalAccessService.checkCode(body.data)
+      return reply.status(200).send({ data: { valid: true } })
+    },
+  )
+
   // POST /medical-access/grants — paciente/família gera o código
   fastify.post(
     '/medical-access/grants',

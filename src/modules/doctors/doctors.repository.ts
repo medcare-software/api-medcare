@@ -189,6 +189,10 @@ export const doctorsRepository = {
     return db.user.update({ where: { id: userId }, data: { name } })
   },
 
+  updateUserEmail(userId: string, email: string) {
+    return db.user.update({ where: { id: userId }, data: { email: email.toLowerCase() } })
+  },
+
   // Sessões ativas por dispositivo (aba Atividade) — não revogadas e não expiradas.
   findActiveSessionsByUserId(userId: string) {
     return db.refreshToken.findMany({

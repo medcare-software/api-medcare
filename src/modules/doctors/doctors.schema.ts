@@ -37,6 +37,7 @@ export const CreateDoctorSchema = z.object({
 
 export const UpdateDoctorSchema = z.object({
   name: z.string().min(1).optional(),
+  email: z.string().email({ message: 'E-mail inválido' }).optional(),
   crmNumber: z
     .string()
     .regex(/^\d{6}$/, 'CRM deve conter 6 dígitos')

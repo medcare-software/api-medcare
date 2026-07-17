@@ -183,12 +183,22 @@ export const doctorsService = {
       }
     }
 
-    const { phone, name, ...doctorFields } = input
+    if (input.email !== undefined) {
+      const existingUser = await doctorsRepository.findUserByEmail(input.email)
+      if (existingUser && existingUser.id !== doctor.userId) {
+        throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
+      }
+    }
+
+    const { phone, name, email, ...doctorFields } = input
     if (phone !== undefined) {
       await doctorsRepository.updateUserPhone(doctor.userId, phone)
     }
     if (name !== undefined) {
       await doctorsRepository.updateUserName(doctor.userId, name)
+    }
+    if (email !== undefined) {
+      await doctorsRepository.updateUserEmail(doctor.userId, email)
     }
 
     const updated = await doctorsRepository.update(

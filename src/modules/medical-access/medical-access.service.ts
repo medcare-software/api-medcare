@@ -13,9 +13,41 @@ import { sendPushToUser } from '../../shared/push/index.js'
 import { hashForLookup } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { medicalAccessRepository } from './medical-access.repository.js'
-import type { CreateGrantInput, RedeemGrantInput } from './medical-access.schema.js'
+import type {
+  CheckGrantInput,
+  CreateGrantInput,
+  RedeemGrantInput,
+} from './medical-access.schema.js'
+
+// Valida o código (existe, não expirado, não já usado/revogado) sem consumi-lo
+// — usado tanto por checkCode (validação prévia, antes de escolher o médico)
+// quanto por redeem (que ativa o grant em seguida).
+async function findValidGrantByCode(code: string) {
+  const codeHash = hashForLookup(code)
+  const grant = await medicalAccessRepository.findByCodeHash(codeHash)
+  if (!grant) {
+    throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
+  }
+  if (grant.status === 'ACTIVE' || grant.status === 'REVOKED') {
+    throw new AppError({ code: 'CONFLICT', message: 'Código já utilizado ou revogado' })
+  }
+  if (grant.status === 'EXPIRED' || (grant.expiresAt !== null && grant.expiresAt < new Date())) {
+    if (grant.status !== 'EXPIRED') {
+      await medicalAccessRepository.markExpired(grant.id)
+    }
+    throw new AppError({ code: 'ACCESS_CODE_EXPIRED', message: 'Código expirado' })
+  }
+  return grant
+}
 
 export const medicalAccessService = {
+  // Validação prévia (não consome o código) — usada pela clínica antes de
+  // avançar para a seleção do médico responsável, dando feedback imediato de
+  // código inválido/expirado/já usado sem precisar escolher médico primeiro.
+  async checkCode(input: CheckGrantInput) {
+    await findValidGrantByCode(input.code)
+  },
+
   async createGrant(user: AuthUser, input: CreateGrantInput) {
     await assertMemberInScope(user, input.memberId)
 
@@ -49,20 +81,7 @@ export const medicalAccessService = {
   },
 
   async redeem(user: AuthUser, input: RedeemGrantInput) {
-    const codeHash = hashForLookup(input.code)
-    const grant = await medicalAccessRepository.findByCodeHash(codeHash)
-    if (!grant) {
-      throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
-    }
-    if (grant.status === 'ACTIVE' || grant.status === 'REVOKED') {
-      throw new AppError({ code: 'CONFLICT', message: 'Código já utilizado ou revogado' })
-    }
-    if (grant.status === 'EXPIRED' || (grant.expiresAt !== null && grant.expiresAt < new Date())) {
-      if (grant.status !== 'EXPIRED') {
-        await medicalAccessRepository.markExpired(grant.id)
-      }
-      throw new AppError({ code: 'ACCESS_CODE_EXPIRED', message: 'Código expirado' })
-    }
+    const grant = await findValidGrantByCode(input.code)
 
     const isDoctor = user.role === 'DOCTOR'
     const doctorId = isDoctor ? await resolveDoctorId(user.id) : undefined
