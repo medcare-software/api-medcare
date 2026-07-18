@@ -1,5 +1,6 @@
-import type { MedicationStripeColor, PrescriptionValidity } from '@prisma/client'
+import type { MedicationForm, MedicationStripeColor, PrescriptionValidity } from '@prisma/client'
 import { db } from '../../config/database.js'
+import { buildMedicationFromPrescriptionItem } from '../medications/medications.internal.js'
 
 interface PrescriptionItemData {
   name: string
@@ -8,6 +9,13 @@ interface PrescriptionItemData {
   duration: string
   instructionsEncrypted?: Buffer<ArrayBuffer>
   stripeColor: MedicationStripeColor
+  form?: MedicationForm
+  dosageUnit?: string
+  scheduleTimes: string[]
+  weekDays: string[]
+  startDate?: Date
+  endDate?: Date
+  continuousUse?: boolean
 }
 
 interface CreatePrescriptionData {
@@ -48,11 +56,31 @@ export const prescriptionsRepository = {
     })
   },
 
+  // Roda numa transaction porque a criação das Medication abaixo precisa ser
+  // atômica com a criação do receituário+itens — se uma medicação falhar, o
+  // receituário inteiro deve reverter, senão sobram itens "fantasmas" que nunca
+  // viraram medicação real (ver medications/medications.internal.ts).
   create(data: CreatePrescriptionData) {
     const { items, ...rest } = data
-    return db.prescription.create({
-      data: { ...rest, items: { create: items } },
-      include: { doctor: DOCTOR_SELECT, items: true },
+    return db.$transaction(async (tx) => {
+      const prescription = await tx.prescription.create({
+        data: { ...rest, items: { create: items } },
+        include: { doctor: DOCTOR_SELECT, items: true },
+      })
+
+      for (const item of prescription.items) {
+        await tx.medication.create({
+          data: buildMedicationFromPrescriptionItem(item, {
+            memberId: prescription.memberId,
+            doctorId: data.doctorId,
+            diagnosticId: prescription.linkedDiagnosticId,
+            issueDate: prescription.issueDate,
+            validity: prescription.validity,
+          }),
+        })
+      }
+
+      return prescription
     })
   },
 

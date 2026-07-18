@@ -28,7 +28,7 @@ export const RecordVaccineDoseSchema = z
     doseNumber: z.number().int().positive({ message: 'Número da dose deve ser maior que zero' }),
     appliedAt: requiredDate('Data de aplicação inválida'),
     manufacturer: z.string().min(1, { message: 'Fabricante é obrigatório' }),
-    batchNumber: z.string().min(1, { message: 'Número do lote é obrigatório' }),
+    batchNumber: z.string().min(1, { message: 'Número do lote não pode ser vazio' }).optional(),
     location: z.string().min(1, { message: 'Local de aplicação é obrigatório' }),
     administrationRoute: z.string().min(1, { message: 'Via de administração é obrigatória' }),
     nextBoosterAt: optionalDate('Data do próximo reforço inválida'),

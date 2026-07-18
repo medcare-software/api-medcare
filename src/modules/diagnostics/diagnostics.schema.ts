@@ -6,14 +6,20 @@ export const CreateDiagnosticSchema = z.object({
   title: z.string().min(1, { message: 'Título é obrigatório' }),
   description: z.string().min(1, { message: 'Descrição é obrigatória' }),
   conduct: z.string().min(1, { message: 'Conduta é obrigatória' }),
-  diagnosedAt: requiredDate('Data do diagnóstico inválida'),
+  diagnosedAt: requiredDate('Data do diagnóstico inválida', {
+    notFuture: true,
+    futureMessage: 'Data do diagnóstico não pode estar no futuro',
+  }),
 })
 
 export const UpdateDiagnosticSchema = z.object({
   title: z.string().min(1, { message: 'Título é obrigatório' }).optional(),
   description: z.string().min(1, { message: 'Descrição é obrigatória' }).optional(),
   conduct: z.string().min(1, { message: 'Conduta é obrigatória' }).optional(),
-  diagnosedAt: optionalDate('Data do diagnóstico inválida'),
+  diagnosedAt: optionalDate('Data do diagnóstico inválida', {
+    notFuture: true,
+    futureMessage: 'Data do diagnóstico não pode estar no futuro',
+  }),
 })
 
 export const ListDiagnosticsQuerySchema = z.object({

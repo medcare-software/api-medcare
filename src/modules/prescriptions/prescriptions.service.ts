@@ -1,10 +1,15 @@
-import type { MedicationStripeColor } from '@prisma/client'
+import type { MedicationForm, MedicationStripeColor } from '@prisma/client'
 import {
   assertClinicalReadAccess,
   assertClinicalWriteAccess,
   resolveDoctorId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import {
+  resolveFamilyAdminUserIds,
+  resolveFamilyIdForMember,
+  sendPushToUser,
+} from '../../shared/push/index.js'
 import { decryptField, encryptField } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { prescriptionsRepository } from './prescriptions.repository.js'
@@ -24,6 +29,13 @@ function toItemData(item: PrescriptionItemInput) {
     ...(item.instructions !== undefined && {
       instructionsEncrypted: encryptField(item.instructions),
     }),
+    ...(item.form !== undefined && { form: item.form as MedicationForm }),
+    ...(item.dosageUnit !== undefined && { dosageUnit: item.dosageUnit }),
+    scheduleTimes: item.scheduleTimes,
+    weekDays: item.weekDays,
+    ...(item.startDate !== undefined && { startDate: item.startDate }),
+    ...(item.endDate !== undefined && { endDate: item.endDate }),
+    ...(item.continuousUse !== undefined && { continuousUse: item.continuousUse }),
   }
 }
 
@@ -66,6 +78,21 @@ export const prescriptionsService = {
       }),
       items: input.items.map(toItemData),
     })
+
+    const familyId = await resolveFamilyIdForMember(input.memberId)
+    const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
+    for (const adminUserId of adminUserIds) {
+      await sendPushToUser(adminUserId, {
+        title: 'Novo receituário recebido',
+        body: `Um médico enviou um receituário com ${input.items.length} medicamento(s).`,
+        data: {
+          type: 'prescription-shared',
+          prescriptionId: prescription.id,
+          memberId: input.memberId,
+        },
+      })
+    }
+
     return toResponse(prescription)
   },
 

@@ -9,7 +9,12 @@ export const CreateExamSchema = z.object({
   name: z.string().min(1, { message: 'Nome do exame é obrigatório' }),
   examType: ExamTypeEnum.default('OUTROS'),
   clinicName: z.string().min(1, { message: 'Nome da clínica é obrigatório' }).optional(),
-  examDate: requiredDate('Data do exame inválida'),
+  requestingDoctorName: z.string().min(1, { message: 'Médico solicitante é obrigatório' }),
+  observations: z.string().min(1).optional(),
+  examDate: requiredDate('Data do exame inválida', {
+    notFuture: true,
+    futureMessage: 'Data do exame não pode estar no futuro',
+  }),
   fileId: z.string().min(1, { message: 'Anexo inválido' }).optional(),
   source: ExamSourceEnum.default('MANUAL'),
 })

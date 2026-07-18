@@ -28,7 +28,9 @@ export const medicalAccessRepository = {
     return db.medicalAccessGrant.update({
       where: { id },
       data: { ...data, status: 'ACTIVE' },
-      include: { member: { select: { id: true, displayName: true } } },
+      include: {
+        member: { select: { id: true, displayName: true, birthDate: true, biologicalSex: true } },
+      },
     })
   },
 
@@ -59,7 +61,9 @@ export const medicalAccessRepository = {
   findManyHeldByDoctor(doctorId: string) {
     return db.medicalAccessGrant.findMany({
       where: { doctorId },
-      include: { member: { select: { id: true, displayName: true } } },
+      include: {
+        member: { select: { id: true, displayName: true, birthDate: true, biologicalSex: true } },
+      },
       orderBy: { grantedAt: 'desc' },
     })
   },
@@ -67,7 +71,9 @@ export const medicalAccessRepository = {
   findManyHeldByClinic(clinicId: string) {
     return db.medicalAccessGrant.findMany({
       where: { clinicId },
-      include: { member: { select: { id: true, displayName: true } } },
+      include: {
+        member: { select: { id: true, displayName: true, birthDate: true, biologicalSex: true } },
+      },
       orderBy: { grantedAt: 'desc' },
     })
   },

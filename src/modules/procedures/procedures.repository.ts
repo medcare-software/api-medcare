@@ -15,6 +15,7 @@ interface UpdateProcedureData {
   status?: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
   descriptionEncrypted?: Buffer<ArrayBuffer>
   observationsEncrypted?: Buffer<ArrayBuffer>
+  statusChangeReasonEncrypted?: Buffer<ArrayBuffer>
   performedAt?: Date
 }
 

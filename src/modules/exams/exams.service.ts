@@ -13,6 +13,7 @@ import {
   resolveMemberUserId,
   sendPushToUser,
 } from '../../shared/push/index.js'
+import { decryptField, encryptField } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { examsRepository } from './exams.repository.js'
 import type { CreateExamInput, UpdateExamInput } from './exams.schema.js'
@@ -23,12 +24,13 @@ export const examsService = {
       action: 'VIEW_EXAMS',
       targetType: 'FamilyMember',
     })
-    return examsRepository.findManyByMemberIds([memberId])
+    const exams = await examsRepository.findManyByMemberIds([memberId])
+    return exams.map(toResponse)
   },
 
   async create(user: AuthUser, input: CreateExamInput) {
     await assertExamWriteAccess(user, input.memberId)
-    const { memberId, ...data } = input
+    const { memberId, observations, ...data } = input
     // Exame registrado pelo médico é sempre marcado como origem DOCTOR,
     // independente do que o client tenha enviado. doctorId fica registrado pra
     // contar "exames enviados" na aba Atividade (ver doctors.service.ts).
@@ -36,6 +38,7 @@ export const examsService = {
     const exam = await examsRepository.create(memberId, {
       ...data,
       source,
+      ...(observations !== undefined && { observationsEncrypted: encryptField(observations) }),
       ...(user.role === 'DOCTOR' && { doctorId: await resolveDoctorId(user.id) }),
     })
 
@@ -64,18 +67,34 @@ export const examsService = {
       }
     }
 
-    return exam
+    return toResponse(exam)
   },
 
   async update(user: AuthUser, id: string, input: UpdateExamInput) {
     const exam = await getScopedForUpdate(user, id)
-    return examsRepository.update(exam.id, input)
+    const { observations, ...data } = input
+    const updated = await examsRepository.update(exam.id, {
+      ...data,
+      ...(observations !== undefined && { observationsEncrypted: encryptField(observations) }),
+    })
+    return toResponse(updated)
   },
 
   async remove(user: AuthUser, id: string) {
     const exam = await getScopedForDelete(user, id)
     await examsRepository.delete(exam.id)
   },
+}
+
+function toResponse(exam: {
+  observationsEncrypted: Uint8Array | null
+  [key: string]: unknown
+}) {
+  const { observationsEncrypted, ...rest } = exam
+  return {
+    ...rest,
+    observations: observationsEncrypted ? decryptField(observationsEncrypted) : null,
+  }
 }
 
 // Escritores: família (via escopo) ou DOCTOR com grant ativo. CLINIC_ADMIN só lê.

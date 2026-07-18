@@ -274,36 +274,56 @@ model HealthProfile {
 // Prontuário
 // ─────────────────────────────────────────────
 
+enum MedicationSource {
+  MANUAL
+  DOCTOR
+}
+
 model Medication {
-  id                  String                @id @default(cuid())
-  memberId            String
-  name                String
-  dosage              String
-  dosageUnit          String
-  form                MedicationForm
-  stripeColor         MedicationStripeColor @default(NONE)
-  frequency           String
-  scheduleTimes       String[] // ["08:00", "20:00"]
-  weekDays            String[] // ["seg", "ter", ...] vazio = todos os dias
-  specialInstructions String?
-  continuousUse       Boolean               @default(true)
-  startDate           DateTime
-  endDate             DateTime?
-  stockQuantity       Int?
-  lowStockNotifiedAt  DateTime? // evita reenviar push de estoque baixo a cada dose registrada
-  prescriptionFileId  String? // referência a objeto no storage (MinIO)
-  deactivationReason  String?
+  id                       String                @id @default(cuid())
+  memberId                 String
+  name                     String
+  dosage                   String
+  dosageUnit               String
+  form                     MedicationForm
+  stripeColor              MedicationStripeColor @default(NONE)
+  frequency                String
+  scheduleTimes            String[] // ["08:00", "20:00"]
+  weekDays                 String[] // ["seg", "ter", ...] vazio = todos os dias
+  specialInstructions      String?
+  continuousUse            Boolean               @default(true)
+  startDate                DateTime
+  endDate                  DateTime?
+  stockQuantity            Int?
+  lowStockNotifiedAt       DateTime? // evita reenviar push de estoque baixo a cada dose registrada
+  prescriptionFileId       String? // referência a objeto no storage (MinIO)
+  deactivationReason       String?
   /// Chave do cliente pra deduplicar create quando o app recebe NETWORK_ERROR
   /// após o POST já ter gravado (retry do usuário).
-  idempotencyKey      String?   @unique
-  active              Boolean               @default(true)
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  idempotencyKey           String?               @unique
+  active                   Boolean               @default(true)
+  // Autoria/origem quando a medicação nasce de um receituário (source=DOCTOR) —
+  // nulo quando cadastrada manualmente pela família (source=MANUAL, o caminho de sempre).
+  doctorId                 String?
+  source                   MedicationSource      @default(MANUAL)
+  // Vínculo 1:1 com o item de receituário que originou esta medicação — chave de
+  // idempotência pra criação automática (Prescription -> Medication) não duplicar.
+  sourcePrescriptionItemId String?               @unique
+  // Cópia denormalizada de Prescription.linkedDiagnosticId no momento da criação —
+  // evita join de 3 saltos (PrescriptionItem->Prescription->Diagnostic) num read-path quente.
+  diagnosticId             String?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
 
-  member      FamilyMember           @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  doseRecords MedicationDoseRecord[]
+  member                 FamilyMember           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  doctor                 Doctor?                @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  diagnostic             Diagnostic?            @relation(fields: [diagnosticId], references: [id], onDelete: SetNull)
+  sourcePrescriptionItem PrescriptionItem?      @relation(fields: [sourcePrescriptionItemId], references: [id], onDelete: SetNull)
+  doseRecords            MedicationDoseRecord[]
 
   @@index([memberId])
+  @@index([doctorId])
+  @@index([diagnosticId])
   @@map("medications")
 }
 
@@ -351,7 +371,7 @@ model VaccineDose {
   doseNumber          Int
   appliedAt           DateTime
   manufacturer        String
-  batchNumber         String // rastreabilidade — sensível
+  batchNumber         String? // rastreabilidade — sensível; opcional (nem toda aplicação registra lote)
   location            String
   administrationRoute String
   nextBoosterAt       DateTime?
@@ -364,19 +384,24 @@ model VaccineDose {
 }
 
 model Exam {
-  id         String     @id @default(cuid())
-  memberId   String
-  doctorId   String? // autor quando enviado por um médico (source=DOCTOR) — nulo em registros antigos/manuais
-  name       String
-  examType   ExamType   @default(OUTROS)
-  clinicName String? // nome do laboratório/convênio informado livremente, não uma Clinic cadastrada
-  examDate   DateTime
-  fileId     String? // referência a objeto no storage (MinIO)
-  source     ExamSource @default(MANUAL)
-  createdAt  DateTime   @default(now())
+  id                    String     @id @default(cuid())
+  memberId              String
+  doctorId              String? // autor quando enviado por um médico (source=DOCTOR) — nulo em registros antigos/manuais
+  name                  String
+  examType              ExamType   @default(OUTROS)
+  clinicName            String? // nome do laboratório/convênio informado livremente, não uma Clinic cadastrada
+  // Nome do médico solicitante do exame — metadado administrativo/atribuição,
+  // mesmo tratamento (texto aberto) de clinicName acima, não é narrativa clínica.
+  requestingDoctorName  String?
+  // Observações livres sobre o exame — texto clínico, sempre cifrado via encryptField().
+  observationsEncrypted Bytes?
+  examDate              DateTime
+  fileId                String? // referência a objeto no storage (MinIO)
+  source                ExamSource @default(MANUAL)
+  createdAt             DateTime   @default(now())
 
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  doctor  Doctor?      @relation(fields: [doctorId], references: [id])
+  doctor Doctor?      @relation(fields: [doctorId], references: [id])
 
   @@index([memberId])
   @@index([doctorId])
@@ -402,6 +427,7 @@ model Diagnostic {
   member        FamilyMember   @relation(fields: [memberId], references: [id], onDelete: Cascade)
   doctor        Doctor?        @relation(fields: [doctorId], references: [id], onDelete: SetNull)
   prescriptions Prescription[]
+  medications   Medication[]
 
   @@index([memberId])
   @@map("diagnostics")
@@ -436,34 +462,48 @@ model Prescription {
 }
 
 model PrescriptionItem {
-  id             String @id @default(cuid())
-  prescriptionId String
-  name           String
-  dosage         String
-  posology       String
-  duration       String
+  id                    String                @id @default(cuid())
+  prescriptionId        String
+  name                  String
+  dosage                String
+  posology              String
+  duration              String
   // Instruções específicas do item (ex.: "tomar em jejum") — texto clínico, sempre cifrado.
   instructionsEncrypted Bytes?
-  stripeColor    MedicationStripeColor @default(NONE)
+  stripeColor           MedicationStripeColor @default(NONE)
+  // Campos estruturados abaixo alimentam só a criação automática do Medication
+  // (ver Medication.sourcePrescriptionItemId) — dosage/posology/duration acima
+  // continuam livres, usados só pra exibição/impressão da receita.
+  form                  MedicationForm?
+  dosageUnit            String?
+  scheduleTimes         String[] // ["08:00", "20:00"]
+  weekDays              String[] // ["seg", "ter", ...] vazio = todos os dias
+  startDate             DateTime?
+  endDate               DateTime?
+  continuousUse         Boolean?
 
   prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  medication   Medication?
 
   @@index([prescriptionId])
   @@map("prescription_items")
 }
 
 model Procedure {
-  id                   String          @id @default(cuid())
-  memberId             String
-  doctorId             String?
-  title                String
-  status               ProcedureStatus @default(IN_PROGRESS)
-  descriptionEncrypted Bytes?
+  id                          String          @id @default(cuid())
+  memberId                    String
+  doctorId                    String?
+  title                       String
+  status                      ProcedureStatus @default(IN_PROGRESS)
+  descriptionEncrypted        Bytes?
   // Observações clínicas adicionais — texto sigiloso (LGPD/PHI), sempre cifrado via encryptField().
-  observationsEncrypted Bytes?
-  performedAt          DateTime
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
+  observationsEncrypted       Bytes?
+  // Motivo do cancelamento/reabertura mais recente — campo único (sobrescrito a
+  // cada transição, não é histórico de auditoria), sempre cifrado via encryptField().
+  statusChangeReasonEncrypted Bytes?
+  performedAt                 DateTime
+  createdAt                   DateTime        @default(now())
+  updatedAt                   DateTime        @updatedAt
 
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
   doctor Doctor?      @relation(fields: [doctorId], references: [id], onDelete: SetNull)
@@ -569,6 +609,7 @@ model Doctor {
   exams         Exam[]
   vaccines      Vaccine[]
   prescriptions Prescription[]
+  medications   Medication[]
 
   @@unique([crmNumber, crmState])
   @@index([status])
@@ -631,20 +672,20 @@ model ClinicAdminProfile {
 // ─────────────────────────────────────────────
 
 model Plan {
-  id           String       @id @default(cuid())
-  name         String
-  type         PlanType
-  basePrice    Decimal      @db.Decimal(10, 2)
-  billingCycle BillingCycle @default(MONTHLY)
+  id               String       @id @default(cuid())
+  name             String
+  type             PlanType
+  basePrice        Decimal      @db.Decimal(10, 2)
+  billingCycle     BillingCycle @default(MONTHLY)
   // Regras comerciais do plano — só fazem sentido pra type=CLINIC (quantos
   // médicos/dispositivos o preço base já inclui, e o valor cobrado por médico
   // excedente); ficam null em planos type=DOCTOR.
   includedDoctors  Int?
   devicesPerDoctor Int?
-  extraMemberFee   Decimal?   @db.Decimal(10, 2)
-  status       UserStatus   @default(ACTIVE)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  extraMemberFee   Decimal?     @db.Decimal(10, 2)
+  status           UserStatus   @default(ACTIVE)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   doctors       Doctor[]
   clinics       Clinic[]
@@ -654,21 +695,21 @@ model Plan {
 }
 
 model Subscription {
-  id            String             @id @default(cuid())
-  planId        String
-  clinicId      String?
-  doctorId      String?
-  paymentMethod PaymentMethod
-  billingAddress Json? // endereço de cobrança — pode divergir do endereço da clínica/médico
-  status        SubscriptionStatus @default(ACTIVE)
-  nextDueDate   DateTime
+  id                String             @id @default(cuid())
+  planId            String
+  clinicId          String?
+  doctorId          String?
+  paymentMethod     PaymentMethod
+  billingAddress    Json? // endereço de cobrança — pode divergir do endereço da clínica/médico
+  status            SubscriptionStatus @default(ACTIVE)
+  nextDueDate       DateTime
   // Só relevante para assinaturas de clínica (Plan.includedDoctors/extraMemberFee) —
   // recalculado automaticamente a cada vínculo/desvínculo de médico, nunca editado
   // diretamente pelo usuário. Valor total cobrado = Plan.basePrice +
   // extraDoctorsCount × Plan.extraMemberFee. Ver clinics.service.ts.
-  extraDoctorsCount Int @default(0)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  extraDoctorsCount Int                @default(0)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   plan   Plan    @relation(fields: [planId], references: [id], onDelete: Restrict)
   clinic Clinic? @relation(fields: [clinicId], references: [id], onDelete: Cascade)

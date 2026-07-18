@@ -31,7 +31,10 @@ const BaseMedicationSchema = z.object({
     .min(1, { message: 'Instrução especial não pode ser vazia' })
     .optional(),
   continuousUse: z.boolean().default(true),
-  startDate: requiredDate('Data de início inválida'),
+  startDate: requiredDate('Data de início inválida', {
+    notFuture: true,
+    futureMessage: 'Data de início não pode estar no futuro',
+  }),
   endDate: optionalDate('Data de término inválida'),
   stockQuantity: z
     .number()

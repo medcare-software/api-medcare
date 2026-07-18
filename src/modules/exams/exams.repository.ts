@@ -6,6 +6,15 @@ import type { CreateExamInput, UpdateExamInput } from './exams.schema.js'
 // autor, mesmo padrão já usado em diagnostics.repository.ts.
 const DOCTOR_SELECT = { select: { crmNumber: true, crmState: true } }
 
+type ExamCreateData = Omit<CreateExamInput, 'memberId' | 'observations'> & {
+  doctorId?: string
+  observationsEncrypted?: Buffer<ArrayBuffer>
+}
+
+type ExamUpdateData = Omit<UpdateExamInput, 'observations'> & {
+  observationsEncrypted?: Buffer<ArrayBuffer>
+}
+
 export const examsRepository = {
   findManyByMemberIds(memberIds: string[]) {
     return db.exam.findMany({
@@ -25,11 +34,11 @@ export const examsRepository = {
     return db.exam.findUnique({ where: { id } })
   },
 
-  create(memberId: string, input: Omit<CreateExamInput, 'memberId'> & { doctorId?: string }) {
+  create(memberId: string, input: ExamCreateData) {
     return db.exam.create({ data: { memberId, ...omitUndefined(input) } })
   },
 
-  update(id: string, input: UpdateExamInput) {
+  update(id: string, input: ExamUpdateData) {
     return db.exam.update({ where: { id }, data: omitUndefined(input) })
   },
 
