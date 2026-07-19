@@ -26,6 +26,15 @@ export const CheckGrantSchema = z.object({
   code: z.string().regex(/^\d{6,8}$/, 'Código deve ter 6 a 8 dígitos'),
 })
 
+// GET /medical-access/my-grants?status=ACTIVE — filtro opcional. Sem ele, retorna todos
+// os status (necessário pra tela de administração de acessos da clínica); o consumidor
+// "meus pacientes" do médico deve passar status=ACTIVE pra não listar paciente
+// revogado/expirado (ver web-medcare HomePage.tsx).
+export const ListHeldGrantsQuerySchema = z.object({
+  status: z.enum(['PENDING', 'ACTIVE', 'EXPIRED', 'REVOKED']).optional(),
+})
+
 export type CreateGrantInput = z.infer<typeof CreateGrantSchema>
 export type RedeemGrantInput = z.infer<typeof RedeemGrantSchema>
 export type CheckGrantInput = z.infer<typeof CheckGrantSchema>
+export type ListHeldGrantsQuery = z.infer<typeof ListHeldGrantsQuerySchema>

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 
+import type { AccessStatus } from '@prisma/client'
 import { db } from '../../config/database.js'
 import { env } from '../../config/env.js'
 import {
@@ -137,14 +138,14 @@ export const medicalAccessService = {
     await medicalAccessRepository.revoke(grant.id)
   },
 
-  async listHeld(user: AuthUser) {
+  async listHeld(user: AuthUser, status?: AccessStatus) {
     if (user.role === 'DOCTOR') {
       const doctorId = await resolveDoctorId(user.id)
-      const grants = await medicalAccessRepository.findManyHeldByDoctor(doctorId)
+      const grants = await medicalAccessRepository.findManyHeldByDoctor(doctorId, status)
       return grants.map(omitCodeHash)
     }
     const clinicId = await resolveClinicId(user.id)
-    const grants = await medicalAccessRepository.findManyHeldByClinic(clinicId)
+    const grants = await medicalAccessRepository.findManyHeldByClinic(clinicId, status)
     return grants.map(omitCodeHash)
   },
 }

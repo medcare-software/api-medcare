@@ -1,4 +1,4 @@
-import type { AccessValidity } from '@prisma/client'
+import type { AccessStatus, AccessValidity } from '@prisma/client'
 
 import { db } from '../../config/database.js'
 
@@ -56,11 +56,12 @@ export const medicalAccessRepository = {
     })
   },
 
-  // Sem filtro de status: a clínica/médico também precisa ver grants expirados/
-  // revogados na própria listagem (coluna "Status" e KPIs da tela de acessos).
-  findManyHeldByDoctor(doctorId: string) {
+  // `status` opcional: sem ele, a clínica/médico também precisa ver grants
+  // expirados/revogados na própria listagem (coluna "Status" e KPIs da tela de
+  // acessos). O consumidor "meus pacientes" do médico passa status=ACTIVE.
+  findManyHeldByDoctor(doctorId: string, status?: AccessStatus) {
     return db.medicalAccessGrant.findMany({
-      where: { doctorId },
+      where: { doctorId, ...(status && { status }) },
       include: {
         member: { select: { id: true, displayName: true, birthDate: true, biologicalSex: true } },
       },
@@ -68,9 +69,9 @@ export const medicalAccessRepository = {
     })
   },
 
-  findManyHeldByClinic(clinicId: string) {
+  findManyHeldByClinic(clinicId: string, status?: AccessStatus) {
     return db.medicalAccessGrant.findMany({
-      where: { clinicId },
+      where: { clinicId, ...(status && { status }) },
       include: {
         member: { select: { id: true, displayName: true, birthDate: true, biologicalSex: true } },
       },

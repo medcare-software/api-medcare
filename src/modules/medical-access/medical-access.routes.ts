@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify'
 
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
-import { CheckGrantSchema, CreateGrantSchema, RedeemGrantSchema } from './medical-access.schema.js'
+import {
+  CheckGrantSchema,
+  CreateGrantSchema,
+  ListHeldGrantsQuerySchema,
+  RedeemGrantSchema,
+} from './medical-access.schema.js'
 import { medicalAccessService } from './medical-access.service.js'
 
 export default async function medicalAccessRoutes(fastify: FastifyInstance) {
@@ -81,12 +86,21 @@ export default async function medicalAccessRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // GET /medical-access/my-grants — grants que o médico/clínica possui
+  // GET /medical-access/my-grants — grants que o médico/clínica possui.
+  // `?status=ACTIVE` filtra pra excluir revogados/expirados (ver "meus pacientes" no web).
   fastify.get(
     '/medical-access/my-grants',
     { preHandler: [authenticate, authorize('DOCTOR', 'CLINIC_ADMIN')] },
     async (req, reply) => {
-      const grants = await medicalAccessService.listHeld(req.user)
+      const query = ListHeldGrantsQuerySchema.safeParse(req.query)
+      if (!query.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: query.error.issues,
+        })
+      }
+      const grants = await medicalAccessService.listHeld(req.user, query.data.status)
       return reply.status(200).send({ data: grants })
     },
   )
