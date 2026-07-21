@@ -168,10 +168,19 @@ export const clinicsService = {
         await sendMail({ to: input.adminEmail, ...template })
       } catch (err) {
         // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
+        // Mas a falha não pode ficar só no console — grava em AuditLog (visível na tela de
+        // Auditoria do admin) pra dar visibilidade de que o convite não chegou.
+        const cause = err instanceof Error ? err.message : String(err)
         console.error(
-          `[clinics] Falha ao enviar e-mail de boas-vindas para ${input.adminEmail}`,
-          err,
+          `[clinics] Falha ao enviar e-mail de boas-vindas para ${input.adminEmail}: ${cause}`,
         )
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'CLINIC_WELCOME_EMAIL_FAILED',
+          targetType: 'Clinic',
+          targetId: clinic.id,
+          metadata: { email: input.adminEmail, error: cause },
+        })
       }
     }
 
