@@ -10,8 +10,14 @@ function sumAll(rows: { _count: { _all: number } }[]) {
   return rows.reduce((total, row) => total + row._count._all, 0)
 }
 
+function startOfMonth(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
 export const dashboardService = {
   async getOverview(query: DashboardQuery) {
+    const monthStart = startOfMonth()
+
     const [
       clinicsByStatus,
       doctorsByStatus,
@@ -20,6 +26,14 @@ export const dashboardService = {
       monthlySignups,
       platformBreakdown,
       storeDownloads,
+      totalDownloadsAgg,
+      downloadsThisMonthAgg,
+      clinicsCreatedThisMonth,
+      doctorsCreatedThisMonth,
+      topSpecialty,
+      topState,
+      previousMonthRevenue,
+      monthlyDownloads,
     ] = await Promise.all([
       dashboardRepository.countClinicsByStatus(),
       dashboardRepository.countDoctorsByStatus(),
@@ -28,6 +42,14 @@ export const dashboardService = {
       dashboardRepository.monthlySignupSeries(query.months),
       dashboardRepository.countByPlatform(),
       storeAnalyticsService.getAggregatedDownloads({ days: 30 }),
+      dashboardRepository.sumAllDownloads(),
+      dashboardRepository.sumDownloadsInRange(monthStart, new Date()),
+      dashboardRepository.countCreatedSince('clinic', monthStart),
+      dashboardRepository.countCreatedSince('doctor', monthStart),
+      dashboardRepository.topSpecialty(),
+      dashboardRepository.topClinicState(),
+      dashboardRepository.sumSubscriptionRevenueAt(['ACTIVE'], monthStart),
+      dashboardRepository.monthlyDownloadSeries(query.months),
     ])
 
     const activeClinics = countByStatus(clinicsByStatus, 'ACTIVE')
@@ -35,6 +57,15 @@ export const dashboardService = {
     const activeDoctors = countByStatus(doctorsByStatus, 'ACTIVE')
     const inactiveDoctors = countByStatus(doctorsByStatus, 'INACTIVE')
     const totalAppUsers = sumAll(usersByRole)
+    const totalDownloads = totalDownloadsAgg._sum.downloadCount ?? 0
+    const downloadsThisMonth = downloadsThisMonthAgg._sum.downloadCount ?? 0
+
+    let mrrChangePercent = 0
+    if (previousMonthRevenue > 0) {
+      mrrChangePercent = ((monthlyRevenue - previousMonthRevenue) / previousMonthRevenue) * 100
+    } else if (monthlyRevenue > 0) {
+      mrrChangePercent = 100
+    }
 
     return {
       kpis: {
@@ -44,24 +75,33 @@ export const dashboardService = {
         registeredDoctors: activeDoctors + inactiveDoctors,
         activeDoctors,
         inactiveDoctors,
+        topSpecialty,
+        topState,
         monthlyRevenue,
         totalAppUsers,
+        totalDownloads,
+        downloadsThisMonth,
+        clinicsCreatedThisMonth,
+        doctorsCreatedThisMonth,
+        mrrChangePercent: Math.round(mrrChangePercent * 10) / 10,
       },
       monthlySignups: monthlySignups.map((row) => ({
+        month: row.month.toISOString().slice(0, 7),
+        count: Number(row.count),
+      })),
+      monthlyDownloads: monthlyDownloads.map((row) => ({
         month: row.month.toISOString().slice(0, 7),
         count: Number(row.count),
       })),
       clientTypeBreakdown: [
         { id: 'clinics', label: 'Clínicas', count: activeClinics },
         { id: 'doctors', label: 'Médicos', count: activeDoctors },
-        { id: 'appUsers', label: 'Usuários do app', count: totalAppUsers },
+        { id: 'appUsers', label: 'Usuários app', count: totalAppUsers },
       ],
       platformBreakdown: platformBreakdown.map((row) => ({
         platform: row.platform,
         count: row._count._all,
       })),
-      // Downloads brutos por loja (App Store Connect/Google Play) — dado por
-      // plataforma/período, nunca por usuário individual nem com geografia.
       storeDownloads,
     }
   },

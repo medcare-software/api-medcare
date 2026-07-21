@@ -61,4 +61,84 @@ export const dashboardRepository = {
       _count: { _all: true },
     })
   },
+
+  countCreatedSince(model: 'clinic' | 'doctor' | 'supplier', since: Date) {
+    if (model === 'clinic') {
+      return db.clinic.count({ where: { deletedAt: null, createdAt: { gte: since } } })
+    }
+    if (model === 'doctor') {
+      return db.doctor.count({ where: { deletedAt: null, createdAt: { gte: since } } })
+    }
+    return db.supplier.count({ where: { createdAt: { gte: since } } })
+  },
+
+  // Estado com mais clínicas ativas — address é Json (sem coluna relacional pra
+  // groupBy do Prisma), por isso precisa de $queryRaw com address->>'state'.
+  async topClinicState() {
+    const rows = await db.$queryRaw<{ state: string; count: bigint }[]>`
+      SELECT address->>'state' AS state, count(*)::bigint AS count
+      FROM clinics
+      WHERE "deletedAt" IS NULL
+        AND status = 'ACTIVE'
+        AND address->>'state' IS NOT NULL
+      GROUP BY address->>'state'
+      ORDER BY count DESC
+      LIMIT 1
+    `
+    const row = rows[0]
+    return row ? { state: row.state, count: Number(row.count) } : null
+  },
+
+  // Especialidade com mais médicos cadastrados — specialties é String[], então
+  // precisa de unnest() pra agrupar por item do array via $queryRaw.
+  async topSpecialty() {
+    const rows = await db.$queryRaw<{ specialty: string; count: bigint }[]>`
+      SELECT unnest(specialties) AS specialty, count(*)::bigint AS count
+      FROM doctors
+      WHERE "deletedAt" IS NULL
+        AND cardinality(specialties) > 0
+      GROUP BY specialty
+      ORDER BY count DESC
+      LIMIT 1
+    `
+    const row = rows[0]
+    return row ? { specialty: row.specialty, count: Number(row.count) } : null
+  },
+
+  async sumSubscriptionRevenueAt(statuses: ('ACTIVE' | 'LATE')[], asOf?: Date) {
+    const subscriptions = await db.subscription.findMany({
+      where: {
+        status: { in: statuses },
+        ...(asOf && { createdAt: { lt: asOf } }),
+      },
+      select: { plan: { select: { basePrice: true } } },
+    })
+    return subscriptions.reduce(
+      (total, subscription) => total + Number(subscription.plan.basePrice),
+      0,
+    )
+  },
+
+  monthlyDownloadSeries(months: number) {
+    return db.$queryRaw<{ month: Date; count: bigint }[]>`
+      SELECT date_trunc('month', date) AS month, sum("downloadCount")::bigint AS count
+      FROM store_download_snapshots
+      WHERE date >= now() - make_interval(months => ${months}::int)
+      GROUP BY 1
+      ORDER BY 1
+    `
+  },
+
+  sumDownloadsInRange(startDate: Date, endDate: Date) {
+    return db.storeDownloadSnapshot.aggregate({
+      where: { date: { gte: startDate, lte: endDate } },
+      _sum: { downloadCount: true },
+    })
+  },
+
+  sumAllDownloads() {
+    return db.storeDownloadSnapshot.aggregate({
+      _sum: { downloadCount: true },
+    })
+  },
 }
