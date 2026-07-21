@@ -14,6 +14,8 @@ export const ListUsersQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((value) => (value === undefined ? undefined : value === 'true')),
+  registeredFrom: z.coerce.date().optional(),
+  registeredTo: z.coerce.date().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 })

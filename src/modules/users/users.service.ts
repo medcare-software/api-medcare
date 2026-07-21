@@ -8,6 +8,7 @@ import {
   generateTemporaryPassword,
   maskCpf,
   recordAuditEvent,
+  recordSensitiveAccess,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { authRepository } from '../auth/auth.repository.js'
@@ -42,6 +43,8 @@ export const usersService = {
       ...(query.status && { status: query.status }),
       ...(query.search && { search: query.search }),
       ...(query.isFamilyAdmin !== undefined && { isFamilyAdmin: query.isFamilyAdmin }),
+      ...(query.registeredFrom && { registeredFrom: query.registeredFrom }),
+      ...(query.registeredTo && { registeredTo: query.registeredTo }),
     }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
     const [users, total] = await Promise.all([
@@ -92,7 +95,7 @@ export const usersService = {
     }
   },
 
-  async getById(id: string) {
+  async getById(actor: AuthUser, id: string) {
     const user = await usersRepository.findById(id)
     if (!user) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Usuário não encontrado' })
@@ -105,6 +108,15 @@ export const usersService = {
         : Promise.resolve([]),
       familyMember ? usersRepository.findMedicationsByMember(familyMember.id) : Promise.resolve([]),
     ])
+
+    if (familyMember?.healthProfile) {
+      await recordSensitiveAccess({
+        actorId: actor.id,
+        action: 'VIEW_CLINICAL_NOTES',
+        targetType: 'HealthProfile',
+        targetId: familyMember.healthProfile.id,
+      })
+    }
 
     return {
       ...toUserSummary(user),
@@ -122,6 +134,9 @@ export const usersService = {
             bloodType: familyMember.healthProfile.bloodType,
             conditions: familyMember.healthProfile.conditions,
             allergies: familyMember.healthProfile.allergies,
+            clinicalNotes: familyMember.healthProfile.notesEncrypted
+              ? decryptField(familyMember.healthProfile.notesEncrypted)
+              : null,
           }
         : null,
       medications: medications.map((medication) => ({

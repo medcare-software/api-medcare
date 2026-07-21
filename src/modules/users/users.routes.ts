@@ -42,7 +42,7 @@ export default async function usersRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      const user = await usersService.getById(id)
+      const user = await usersService.getById(req.user, id)
       return reply.status(200).send({ data: user })
     },
   )

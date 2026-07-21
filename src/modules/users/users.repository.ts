@@ -11,6 +11,8 @@ type UserListFilters = {
   status?: UserStatus
   search?: string
   isFamilyAdmin?: boolean
+  registeredFrom?: Date
+  registeredTo?: Date
 }
 
 function buildUserWhere(filters: UserListFilters) {
@@ -20,6 +22,12 @@ function buildUserWhere(filters: UserListFilters) {
     ...(filters.status && { status: filters.status }),
     ...(filters.isFamilyAdmin !== undefined && {
       familyMember: { isAdmin: filters.isFamilyAdmin },
+    }),
+    ...((filters.registeredFrom || filters.registeredTo) && {
+      createdAt: {
+        ...(filters.registeredFrom && { gte: filters.registeredFrom }),
+        ...(filters.registeredTo && { lte: filters.registeredTo }),
+      },
     }),
     ...(filters.search && {
       OR: [
