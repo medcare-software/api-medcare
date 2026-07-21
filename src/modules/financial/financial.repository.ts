@@ -290,20 +290,51 @@ export const financialRepository = {
 
   // Mesmo padrão de sumActiveSubscriptionRevenue do dashboard — soma em memória
   // porque o valor mensal vive em Plan.basePrice, não em Subscription.
+  // Sem gateway de fatura: ACTIVE = em dia/recebido, LATE = inadimplente,
+  // pendente = ACTIVE com nextDueDate >= hoje.
   async summarizeReceivables() {
-    const [activeCount, lateCount, cancelledCount, activeAndLate] = await Promise.all([
-      db.subscription.count({ where: { status: 'ACTIVE' } }),
-      db.subscription.count({ where: { status: 'LATE' } }),
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const [active, late, cancelled, pending] = await Promise.all([
+      db.subscription.findMany({
+        where: { status: 'ACTIVE' },
+        select: { plan: { select: { basePrice: true } }, nextDueDate: true },
+      }),
+      db.subscription.findMany({
+        where: { status: 'LATE' },
+        select: { plan: { select: { basePrice: true } } },
+      }),
       db.subscription.count({ where: { status: 'CANCELLED' } }),
       db.subscription.findMany({
-        where: { status: { in: ['ACTIVE', 'LATE'] } },
+        where: { status: 'ACTIVE', nextDueDate: { gte: today } },
         select: { plan: { select: { basePrice: true } } },
       }),
     ])
-    const totalMonthlyCents = Math.round(
-      activeAndLate.reduce((sum, subscription) => sum + Number(subscription.plan.basePrice), 0) *
-        100,
-    )
-    return { activeCount, lateCount, cancelledCount, totalMonthlyCents }
+
+    const toCents = (rows: { plan: { basePrice: unknown } }[]) =>
+      Math.round(rows.reduce((sum, row) => sum + Number(row.plan.basePrice), 0) * 100)
+
+    const receivedCents = toCents(active)
+    const overdueCents = toCents(late)
+    const pendingCents = toCents(pending)
+
+    return {
+      activeCount: active.length,
+      lateCount: late.length,
+      cancelledCount: cancelled,
+      totalMonthlyCents: receivedCents + overdueCents,
+      receivedCents,
+      receivedCount: active.length,
+      pendingCents,
+      pendingCount: pending.length,
+      overdueCents,
+      overdueCount: late.length,
+      totalCount: active.length + late.length,
+    }
+  },
+
+  countSuppliersCreatedSince(since: Date) {
+    return db.supplier.count({ where: { createdAt: { gte: since } } })
   },
 }

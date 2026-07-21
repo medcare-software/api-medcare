@@ -321,6 +321,11 @@ export const financialService = {
   },
 
   async getAccountsPayableSummary() {
-    return financialRepository.summarizeAccountsPayable()
+    const summary = await financialRepository.summarizeAccountsPayable()
+    const monthStart = new Date()
+    monthStart.setDate(1)
+    monthStart.setHours(0, 0, 0, 0)
+    const suppliersCreatedThisMonth = await financialRepository.countSuppliersCreatedSince(monthStart)
+    return { ...summary, suppliersCreatedThisMonth }
   },
 }
