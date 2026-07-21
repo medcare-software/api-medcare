@@ -57,6 +57,7 @@ export const UpdateDoctorSelfSchema = z.object({
 export const ListDoctorsQuerySchema = z.object({
   status: StatusEnum.optional(),
   specialty: z.string().min(1).optional(),
+  planId: z.string().min(1).optional(),
   search: z.string().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),

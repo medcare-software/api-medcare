@@ -76,6 +76,11 @@ const envSchema = z.object({
     .string()
     .url()
     .default('https://lp.medcaresw.com/reset-password'),
+  // Link de definição de senha do médico recém-cadastrado — aponta pra própria
+  // web-medcare (portal médico roda no navegador, diferente do member do
+  // app-medcare acima, que é mobile). Setar pra URL real de produção do
+  // web-medcare + /reset-password no ambiente hospedado.
+  DOCTOR_ACTIVATION_LINK_BASE_URL: z.string().url().default('http://localhost:5173/reset-password'),
   MEDICATION_LOW_STOCK_THRESHOLD: z.coerce.number().int().positive().default(5),
   ACCESS_EXPIRING_SOON_DAYS: z.coerce.number().int().positive().default(3),
 

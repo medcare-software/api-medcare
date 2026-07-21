@@ -14,6 +14,7 @@ const doctorInclude = {
 type DoctorListFilters = {
   status?: UserStatus
   specialty?: string
+  planId?: string
   search?: string
 }
 
@@ -54,6 +55,15 @@ export const doctorsRepository = {
     })
   },
 
+  // Blind index — nunca decripta a tabela inteira pra achar CPF repetido (ver
+  // api-medcare/CLAUDE.md regra 2). cpfHash é @unique no schema.
+  findUserByCpfHash(cpfHash: string) {
+    return db.user.findUnique({
+      where: { cpfHash },
+      include: { doctor: true },
+    })
+  },
+
   findByCrm(crmNumber: string, crmState: string) {
     return db.doctor.findUnique({ where: { crmNumber_crmState: { crmNumber, crmState } } })
   },
@@ -64,6 +74,7 @@ export const doctorsRepository = {
         deletedAt: null,
         ...(filters.status && { status: filters.status }),
         ...(filters.specialty && { specialties: { has: filters.specialty } }),
+        ...(filters.planId && { planId: filters.planId }),
         ...(filters.search && {
           OR: [
             { crmNumber: { contains: filters.search, mode: 'insensitive' } },
@@ -84,6 +95,7 @@ export const doctorsRepository = {
         deletedAt: null,
         ...(filters.status && { status: filters.status }),
         ...(filters.specialty && { specialties: { has: filters.specialty } }),
+        ...(filters.planId && { planId: filters.planId }),
         ...(filters.search && {
           OR: [
             { crmNumber: { contains: filters.search, mode: 'insensitive' } },

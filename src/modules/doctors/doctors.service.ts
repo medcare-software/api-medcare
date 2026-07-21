@@ -1,9 +1,10 @@
 import bcrypt from 'bcryptjs'
+import type { FastifyInstance } from 'fastify'
 
 import { env } from '../../config/env.js'
 import { resolveClinicId, resolveDoctorId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
-import { accountWelcomeTemplate, sendMail } from '../../shared/mail/index.js'
+import { doctorActivationLinkTemplate, sendMail } from '../../shared/mail/index.js'
 import {
   decryptField,
   encryptField,
@@ -16,6 +17,7 @@ import {
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
+import { issuePasswordResetSessionToken } from '../auth/auth.service.js'
 import { plansService } from '../plans/plans.service.js'
 import { doctorsRepository } from './doctors.repository.js'
 import type {
@@ -58,14 +60,13 @@ async function resolveScopedDoctor(user: AuthUser, id: string) {
 }
 
 export const doctorsService = {
-  async create(user: AuthUser, input: CreateDoctorInput) {
+  async create(fastify: FastifyInstance, user: AuthUser, input: CreateDoctorInput) {
     // E-mail já usado por alguém que já tem perfil de médico continua bloqueado.
     // Mas se o e-mail pertence a um User sem perfil de médico (ex.: paciente do
     // app-medcare), o perfil de médico é anexado a esse User existente em vez de
-    // bloquear — mesma pessoa pode acumular um papel do app com o de médico. O
-    // CPF do formulário é ignorado nesse caso (mantém o CPF já cadastrado do User).
-    const existingUser = await doctorsRepository.findUserByEmail(input.email)
-    if (existingUser?.doctor) {
+    // bloquear — mesma pessoa pode acumular um papel do app com o de médico.
+    const existingUserByEmail = await doctorsRepository.findUserByEmail(input.email)
+    if (existingUserByEmail?.doctor) {
       throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
     }
 
@@ -74,6 +75,29 @@ export const doctorsService = {
     if (existingDoctor) {
       throw new AppError({ code: 'CONFLICT', message: 'CRM já cadastrado' })
     }
+
+    // CPF é o índice mais forte de identidade — checa via blind index (nunca
+    // decripta a tabela inteira, ver api-medcare/CLAUDE.md regra 2). Bloqueia só
+    // se a pessoa já tem perfil de médico; CPF reaproveitado por outro papel
+    // (dono de clínica, usuário do app) é esperado e não deve ser barrado aqui.
+    const cpfDigits = onlyDigits(input.cpf)
+    const cpfHash = hashForLookup(cpfDigits)
+    const existingUserByCpf = await doctorsRepository.findUserByCpfHash(cpfHash)
+    if (existingUserByCpf?.doctor) {
+      throw new AppError({ code: 'CONFLICT', message: 'CPF já cadastrado para outro médico' })
+    }
+    if (
+      existingUserByCpf &&
+      existingUserByEmail &&
+      existingUserByCpf.id !== existingUserByEmail.id
+    ) {
+      throw new AppError({
+        code: 'CONFLICT',
+        message: 'CPF e e-mail informados pertencem a cadastros diferentes',
+      })
+    }
+
+    const existingUser = existingUserByEmail ?? existingUserByCpf
 
     let doctor: Awaited<ReturnType<typeof doctorsRepository.createWithUser>>
     if (existingUser) {
@@ -85,9 +109,11 @@ export const doctorsService = {
         ...(input.planId !== undefined && { planId: input.planId }),
       })
     } else {
+      // Senha temporária nunca é exposta — o médico define a própria senha pelo
+      // link de ativação enviado por e-mail (mesmo mecanismo de
+      // familyMemberActivationLinkTemplate, ver families.service.ts).
       const temporaryPassword = generateTemporaryPassword()
       const passwordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
-      const cpfDigits = onlyDigits(input.cpf)
 
       doctor = await doctorsRepository.createWithUser({
         name: input.name,
@@ -95,7 +121,7 @@ export const doctorsService = {
         passwordHash,
         ...(input.phone !== undefined && { phone: input.phone }),
         cpfEncrypted: encryptField(cpfDigits),
-        cpfHash: hashForLookup(cpfDigits),
+        cpfHash,
         crmNumber: input.crmNumber,
         crmState,
         specialties: input.specialties,
@@ -103,11 +129,27 @@ export const doctorsService = {
       })
 
       try {
-        const template = accountWelcomeTemplate(input.name, temporaryPassword)
+        const activationToken = issuePasswordResetSessionToken(
+          fastify,
+          doctor.user.id,
+          env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+        )
+        const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
+        const template = doctorActivationLinkTemplate(link, input.name)
         await sendMail({ to: input.email, ...template })
       } catch (err) {
-        // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
-        console.error(`[doctors] Falha ao enviar e-mail de boas-vindas para ${input.email}`, err)
+        // Best-effort: o cadastro já foi concluído, falha no e-mail não deve
+        // derrubar a request — mas fica registrada em AuditLog (visível na tela
+        // de Auditoria do admin) em vez de só no console.
+        const cause = err instanceof Error ? err.message : String(err)
+        console.error(`[doctors] Falha ao enviar e-mail de ativação para ${input.email}: ${cause}`)
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'DOCTOR_ACTIVATION_EMAIL_FAILED',
+          targetType: 'Doctor',
+          targetId: doctor.id,
+          metadata: { email: input.email, error: cause },
+        })
       }
     }
 
@@ -148,6 +190,7 @@ export const doctorsService = {
     const filters = {
       ...(query.status && { status: query.status }),
       ...(query.specialty && { specialty: query.specialty }),
+      ...(query.planId && { planId: query.planId }),
       ...(query.search && { search: query.search }),
     }
     const [doctors, total] = await Promise.all([

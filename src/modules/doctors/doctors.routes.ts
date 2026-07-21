@@ -24,7 +24,7 @@ export default async function doctorsRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const doctor = await doctorsService.create(req.user, body.data)
+      const doctor = await doctorsService.create(fastify, req.user, body.data)
       return reply.status(201).send({ data: doctor })
     },
   )

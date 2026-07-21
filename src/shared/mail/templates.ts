@@ -26,6 +26,21 @@ export function familyMemberActivationLinkTemplate(link: string, memberName: str
   }
 }
 
+export function doctorActivationLinkTemplate(link: string, doctorName: string) {
+  return {
+    subject: 'Bem-vindo ao Medcare — defina sua senha',
+    text: `Olá, ${doctorName}! Você foi cadastrado como médico no Medcare. Para acessar o portal médico, abra o link abaixo e defina sua senha: ${link}\nSe você não esperava este e-mail, ignore-o.`,
+    html: `
+      <p>Olá, ${doctorName}!</p>
+      <p>Você foi cadastrado como médico no Medcare.</p>
+      <p>Para acessar o portal médico, toque no botão abaixo e defina sua senha:</p>
+      <p><a href="${link}" style="display:inline-block;padding:12px 24px;background:#1e40af;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Definir minha senha</a></p>
+      <p>Se o botão não funcionar, copie e cole este link no navegador: ${link}</p>
+      <p>Se você não esperava este e-mail, ignore-o.</p>
+    `,
+  }
+}
+
 export function accountWelcomeTemplate(name: string, temporaryPassword: string) {
   return {
     subject: 'Bem-vindo ao Medcare — defina seu acesso',
