@@ -21,6 +21,7 @@ import medicalAccessRoutes from './modules/medical-access/medical-access.routes.
 import medicationScanRoutes from './modules/medication-scan/medication-scan.routes.js'
 import medicationsRoutes from './modules/medications/medications.routes.js'
 import notificationsRoutes from './modules/notifications/notifications.routes.js'
+import paymentsRoutes from './modules/payments/payments.routes.js'
 import plansRoutes from './modules/plans/plans.routes.js'
 import prescriptionsRoutes from './modules/prescriptions/prescriptions.routes.js'
 import proceduresRoutes from './modules/procedures/procedures.routes.js'
@@ -105,6 +106,7 @@ export async function buildApp() {
   await app.register(clinicsRoutes, { prefix: env.API_PREFIX })
   await app.register(dashboardRoutes, { prefix: env.API_PREFIX })
   await app.register(plansRoutes, { prefix: env.API_PREFIX })
+  await app.register(paymentsRoutes, { prefix: env.API_PREFIX })
   await app.register(financialRoutes, { prefix: env.API_PREFIX })
   await app.register(notificationsRoutes, { prefix: env.API_PREFIX })
   await app.register(medicationsRoutes, { prefix: env.API_PREFIX })

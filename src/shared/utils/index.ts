@@ -1,4 +1,4 @@
-export { computeNextDueDate } from './billing.js'
+export { computeNextDueDate, MONTHS_BY_BILLING_CYCLE } from './billing.js'
 export { omitUndefined } from './clean.js'
 export { parseDurationToMs } from './duration.js'
 export { getDeviceLabel } from './device-label.js'

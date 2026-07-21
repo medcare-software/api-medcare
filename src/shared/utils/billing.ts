@@ -1,6 +1,6 @@
 import type { BillingCycle } from '@prisma/client'
 
-const MONTHS_BY_BILLING_CYCLE: Record<BillingCycle, number> = {
+export const MONTHS_BY_BILLING_CYCLE: Record<BillingCycle, number> = {
   MONTHLY: 1,
   QUARTERLY: 3,
   SEMIANNUAL: 6,

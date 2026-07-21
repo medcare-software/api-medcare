@@ -715,8 +715,34 @@ model Subscription {
   clinic Clinic? @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   doctor Doctor? @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
+  payments Payment[]
+
   @@index([planId])
   @@map("subscriptions")
+}
+
+// Cobrança mensal individual de uma assinatura — histórico exibido em "Ver
+// histórico de pagamentos" (modal admin de clínicas/financeiro). Gerado de forma
+// preguiçosa (lazy) pelo payments.service a partir de Subscription.billingCycle,
+// não por um job agendado (não há infraestrutura de scheduler no projeto).
+model Payment {
+  id             String               @id @default(cuid())
+  subscriptionId String
+  referenceMonth DateTime // primeiro dia do mês de referência da cobrança
+  amountCents    Int
+  dueDate        DateTime
+  paidAt         DateTime?
+  paymentMethod  PaymentMethod
+  status         AccountPayableStatus @default(PENDING) // reaproveita o enum já existente (PAID/PENDING/OVERDUE/PAID_LATE)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, referenceMonth])
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("payments")
 }
 
 model Supplier {
