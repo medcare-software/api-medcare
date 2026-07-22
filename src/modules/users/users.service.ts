@@ -1,3 +1,4 @@
+import type { HealthProfile, Medication } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 import { env } from '../../config/env.js'
@@ -17,6 +18,31 @@ import type { ListUsersQuery } from './users.schema.js'
 
 function maskedCpf(cpfEncrypted: Uint8Array | null) {
   return cpfEncrypted ? maskCpf(decryptField(cpfEncrypted)) : null
+}
+
+function toHealthProfileDetail(healthProfile: HealthProfile) {
+  return {
+    weightKg: healthProfile.weightKg,
+    heightM: healthProfile.heightM,
+    bloodType: healthProfile.bloodType,
+    conditions: healthProfile.conditions,
+    allergies: healthProfile.allergies,
+    clinicalNotes: healthProfile.notesEncrypted ? decryptField(healthProfile.notesEncrypted) : null,
+  }
+}
+
+function toMedicationSummary(medication: Medication) {
+  return {
+    id: medication.id,
+    name: medication.name,
+    dosage: medication.dosage,
+    dosageUnit: medication.dosageUnit,
+    form: medication.form,
+    frequency: medication.frequency,
+    stripeColor: medication.stripeColor,
+    continuousUse: medication.continuousUse,
+    active: medication.active,
+  }
 }
 
 function toUserSummary(user: Awaited<ReturnType<typeof usersRepository.findMany>>[number]) {
@@ -128,28 +154,58 @@ export const usersService = {
         birthDate: member.birthDate,
       })),
       healthProfile: familyMember?.healthProfile
-        ? {
-            weightKg: familyMember.healthProfile.weightKg,
-            heightM: familyMember.healthProfile.heightM,
-            bloodType: familyMember.healthProfile.bloodType,
-            conditions: familyMember.healthProfile.conditions,
-            allergies: familyMember.healthProfile.allergies,
-            clinicalNotes: familyMember.healthProfile.notesEncrypted
-              ? decryptField(familyMember.healthProfile.notesEncrypted)
-              : null,
-          }
+        ? toHealthProfileDetail(familyMember.healthProfile)
         : null,
-      medications: medications.map((medication) => ({
-        id: medication.id,
-        name: medication.name,
-        dosage: medication.dosage,
-        dosageUnit: medication.dosageUnit,
-        form: medication.form,
-        frequency: medication.frequency,
-        stripeColor: medication.stripeColor,
-        continuousUse: medication.continuousUse,
-        active: medication.active,
+      medications: medications.map(toMedicationSummary),
+    }
+  },
+
+  async getFamilyMemberById(actor: AuthUser, id: string) {
+    const familyMember = await usersRepository.findFamilyMemberByIdForAdmin(id)
+    if (!familyMember) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Membro da família não encontrado' })
+    }
+
+    const [otherMembers, medications] = await Promise.all([
+      usersRepository.findOtherFamilyMembers(familyMember.familyId, familyMember.id),
+      usersRepository.findMedicationsByMember(familyMember.id),
+    ])
+
+    if (familyMember.healthProfile) {
+      await recordSensitiveAccess({
+        actorId: actor.id,
+        action: 'VIEW_CLINICAL_NOTES',
+        targetType: 'HealthProfile',
+        targetId: familyMember.healthProfile.id,
+      })
+    }
+
+    const cpfEncrypted = familyMember.cpfEncrypted ?? familyMember.user?.cpfEncrypted ?? null
+
+    return {
+      id: familyMember.id,
+      name: familyMember.displayName,
+      email: familyMember.user?.email ?? null,
+      cpf: maskedCpf(cpfEncrypted),
+      phone: familyMember.user?.phone ?? null,
+      state: familyMember.user?.state ?? null,
+      role: familyMember.isAdmin ? 'PATIENT_ADMIN' : 'FAMILY_MEMBER',
+      status: familyMember.user?.status ?? 'ACTIVE',
+      isFamilyAdmin: familyMember.isAdmin,
+      birthDate: familyMember.birthDate,
+      createdAt: familyMember.createdAt,
+      lastLoginAt: familyMember.user?.lastLoginAt ?? null,
+      membersCount: familyMember.isAdmin ? otherMembers.length : null,
+      familyMembers: otherMembers.map((member) => ({
+        id: member.id,
+        displayName: member.displayName,
+        relationship: member.relationship,
+        birthDate: member.birthDate,
       })),
+      healthProfile: familyMember.healthProfile
+        ? toHealthProfileDetail(familyMember.healthProfile)
+        : null,
+      medications: medications.map(toMedicationSummary),
     }
   },
 

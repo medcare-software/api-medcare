@@ -64,6 +64,15 @@ export const usersRepository = {
     })
   },
 
+  // Busca um FamilyMember diretamente (não via User) — usado pelo admin para
+  // ver detalhes de membros sem login próprio (ex.: filho menor, userId null).
+  findFamilyMemberByIdForAdmin(id: string) {
+    return db.familyMember.findFirst({
+      where: { id, deletedAt: null },
+      include: { healthProfile: true, user: true },
+    })
+  },
+
   // Demais membros da mesma família (exclui o próprio usuário) — usado no
   // detalhe do usuário admin para listar quem mais está na família.
   findOtherFamilyMembers(familyId: string, excludeMemberId: string) {

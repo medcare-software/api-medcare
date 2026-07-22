@@ -47,6 +47,17 @@ export default async function usersRoutes(fastify: FastifyInstance) {
     },
   )
 
+  // GET /users/family-members/:id
+  fastify.get(
+    '/users/family-members/:id',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const familyMember = await usersService.getFamilyMemberById(req.user, id)
+      return reply.status(200).send({ data: familyMember })
+    },
+  )
+
   // POST /users/:id/force-reset-password
   fastify.post(
     '/users/:id/force-reset-password',
