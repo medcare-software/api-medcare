@@ -120,13 +120,23 @@ export const reportsRepository = {
   },
 
   // ── Financeiro ──────────────────────────────────────────────────────────
-  payableSumByCategory() {
-    return db.accountPayable.groupBy({
-      by: ['category'],
-      where: { status: { in: ['PENDING', 'OVERDUE'] } },
-      _sum: { valueCents: true },
-      _count: { _all: true },
-    })
+  // Evolução mensal do ano calendário atual (Jan–Dez), a partir do Payment
+  // (cobrança por ciclo, `referenceMonth` já é o 1º dia do mês) — meses sem
+  // registro ainda entram como 0 (o gráfico sempre mostra os 12 meses).
+  paymentEvolutionByMonth() {
+    return db.$queryRaw<
+      { month: number; invoicedCents: bigint; receivedCents: bigint; overdueCents: bigint }[]
+    >`
+      SELECT
+        EXTRACT(MONTH FROM "referenceMonth")::int AS month,
+        COALESCE(SUM("amountCents"), 0)::bigint AS "invoicedCents",
+        COALESCE(SUM("amountCents") FILTER (WHERE status IN ('PAID', 'PAID_LATE')), 0)::bigint AS "receivedCents",
+        COALESCE(SUM("amountCents") FILTER (WHERE status = 'OVERDUE'), 0)::bigint AS "overdueCents"
+      FROM payments
+      WHERE EXTRACT(YEAR FROM "referenceMonth") = EXTRACT(YEAR FROM now())
+      GROUP BY 1
+      ORDER BY 1
+    `
   },
 
   // ── Crescimento do app ────────────────────────────────────────────────
@@ -138,6 +148,20 @@ export const reportsRepository = {
         role: { in: ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'] },
       },
       _count: { _all: true },
+    })
+  },
+
+  countUsersByCity() {
+    return db.user.groupBy({
+      by: ['city', 'state'],
+      where: {
+        deletedAt: null,
+        role: { in: ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'] },
+        city: { not: null },
+      },
+      _count: { _all: true },
+      orderBy: { _count: { city: 'desc' } },
+      take: 5,
     })
   },
 
@@ -172,6 +196,16 @@ export const reportsRepository = {
 
   countDistinctMedicationMembers() {
     return db.medication.findMany({ distinct: ['memberId'], select: { memberId: true } })
+  },
+
+  // Reaproveitado pelo relatório de crescimento (KPI "Média de remédios") além
+  // do relatório de medicamentos, pra não duplicar a conta.
+  async averageMedicationsPerUser() {
+    const [totalMedications, distinctMembers] = await Promise.all([
+      db.medication.count(),
+      db.medication.findMany({ distinct: ['memberId'], select: { memberId: true } }),
+    ])
+    return distinctMembers.length > 0 ? totalMedications / distinctMembers.length : 0
   },
 
   findMedications(

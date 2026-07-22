@@ -56,17 +56,20 @@ async function loadSubscribedClients() {
 export const reportsService = {
   // ── 1. Clientes ──────────────────────────────────────────────────────────
   async getClients(query: ListReportPageQuery) {
-    const [clients, activeClinics, activeDoctors, monthlySignups] = await Promise.all([
-      loadSubscribedClients(),
-      dashboardRepository.countClinicsByStatus(),
-      dashboardRepository.countDoctorsByStatus(),
-      dashboardRepository.monthlySignupSeries(12),
-    ])
+    const [clients, activeClinics, activeDoctors, monthlySignups, appUsersByRole] =
+      await Promise.all([
+        loadSubscribedClients(),
+        dashboardRepository.countClinicsByStatus(),
+        dashboardRepository.countDoctorsByStatus(),
+        dashboardRepository.monthlySignupSeries(12),
+        dashboardRepository.countUsersByRole(),
+      ])
 
     const activeClinicsCount =
       activeClinics.find((row) => row.status === 'ACTIVE')?._count._all ?? 0
     const activeDoctorsCount =
       activeDoctors.find((row) => row.status === 'ACTIVE')?._count._all ?? 0
+    const appUsersCount = appUsersByRole.reduce((sum, row) => sum + row._count._all, 0)
 
     let cumulative = 0
     const growth = monthlySignups.map((row) => {
@@ -84,6 +87,7 @@ export const reportsService = {
     return {
       kpis: {
         totalClients: clients.length,
+        appUsers: appUsersCount,
         activeClinics: activeClinicsCount,
         activeDoctors: activeDoctorsCount,
       },
@@ -277,10 +281,10 @@ export const reportsService = {
 
   // ── 4. Financeiro ────────────────────────────────────────────────────────
   async getFinancial(query: ListReportPageQuery) {
-    const [payableSummary, receivableSummary, payableByCategory, clients] = await Promise.all([
+    const [payableSummary, receivableSummary, evolutionRows, clients] = await Promise.all([
       financialRepository.summarizeAccountsPayable(),
       financialRepository.summarizeReceivables(),
-      reportsRepository.payableSumByCategory(),
+      reportsRepository.paymentEvolutionByMonth(),
       loadSubscribedClients(),
     ])
 
@@ -294,32 +298,45 @@ export const reportsService = {
     )
     const { items, total } = paginate(sortedByDate, query.page, query.pageSize)
 
+    const evolutionByMonth = new Map(evolutionRows.map((row) => [row.month, row]))
+    const evolution = Array.from({ length: 12 }, (_, index) => {
+      const row = evolutionByMonth.get(index + 1)
+      return {
+        month: index + 1,
+        invoicedCents: Number(row?.invoicedCents ?? 0),
+        receivedCents: Number(row?.receivedCents ?? 0),
+        overdueCents: Number(row?.overdueCents ?? 0),
+      }
+    })
+
     return {
       kpis: {
-        monthlyBilledCents: receivableSummary.totalMonthlyCents,
-        overdueCents: payableSummary.overdueCents,
-        pendingPayableCents: payableSummary.pendingCents,
-        paidThisMonthCents: payableSummary.paidThisMonthCents,
+        // Faturamento líquido = recebido dos clientes - pago pela empresa aos fornecedores.
+        netRevenueCents: receivableSummary.receivedCents - payableSummary.paidThisMonthCents,
+        receivedCents: receivableSummary.receivedCents,
+        overdueReceivableCents: receivableSummary.overdueCents,
         averageTicketCents,
       },
-      // Sem histórico de faturas emitidas por mês (não há tabela de invoices) —
-      // evolução mensal de faturamento fica de fora em vez de inventar um dado
-      // que o sistema não tem como derivar com precisão.
-      evolutionAvailable: false,
+      evolutionAvailable: true,
+      evolution,
       receivableBreakdown: {
         totalCents: receivableSummary.totalMonthlyCents,
         byStatus: [
-          { status: 'RECEIVED', count: receivableSummary.receivedCount },
-          { status: 'PENDING', count: receivableSummary.pendingCount },
-          { status: 'OVERDUE', count: receivableSummary.overdueCount },
+          { status: 'RECEIVED', valueCents: receivableSummary.receivedCents },
+          { status: 'PENDING', valueCents: receivableSummary.pendingCents },
+          { status: 'OVERDUE', valueCents: receivableSummary.overdueCents },
         ],
       },
       payableBreakdown: {
-        items: payableByCategory.map((row) => ({
-          category: row.category,
-          count: row._count._all,
-          valueCents: row._sum.valueCents ?? 0,
-        })),
+        totalCents:
+          payableSummary.paidThisMonthCents +
+          payableSummary.pendingCents +
+          payableSummary.overdueCents,
+        byStatus: [
+          { status: 'PAID', valueCents: payableSummary.paidThisMonthCents },
+          { status: 'PENDING', valueCents: payableSummary.pendingCents },
+          { status: 'OVERDUE', valueCents: payableSummary.overdueCents },
+        ],
       },
       newClients: { items, total },
     }
@@ -327,14 +344,28 @@ export const reportsService = {
 
   // ── 5. Crescimento do app ────────────────────────────────────────────────
   async getGrowth() {
-    const [monthlySignups, platformBreakdown, roleBreakdown, stateBreakdown, storeDownloads] =
-      await Promise.all([
-        dashboardRepository.monthlySignupSeries(12),
-        dashboardRepository.countByPlatform(),
-        dashboardRepository.countUsersByRole(),
-        reportsRepository.countUsersByState(),
-        storeAnalyticsService.getAggregatedDownloads({ days: 30 }),
-      ])
+    const thresholdDate = new Date()
+    thresholdDate.setDate(thresholdDate.getDate() - 30)
+
+    const [
+      monthlySignups,
+      platformBreakdown,
+      roleBreakdown,
+      stateBreakdown,
+      storeDownloads,
+      usersAtRisk,
+      avgMedicationsPerUser,
+      topMunicipalitiesRows,
+    ] = await Promise.all([
+      dashboardRepository.monthlySignupSeries(12),
+      dashboardRepository.countByPlatform(),
+      dashboardRepository.countUsersByRole(),
+      reportsRepository.countUsersByState(),
+      storeAnalyticsService.getAggregatedDownloads({ days: 30 }),
+      reportsRepository.countAppUsersAtRisk(thresholdDate),
+      reportsRepository.averageMedicationsPerUser(),
+      reportsRepository.countUsersByCity(),
+    ])
 
     let cumulative = 0
     const series = monthlySignups.map((row) => {
@@ -348,9 +379,26 @@ export const reportsService = {
 
     const totalSignups = cumulative
     const newSignupsThisMonth = series.length > 0 ? (series.at(-1)?.newSignups ?? 0) : 0
+    const totalAppUsers = roleBreakdown.reduce((sum, row) => sum + row._count._all, 0)
+    const totalDownloadsFromStores = storeDownloads.totalsByPlatform.reduce(
+      (sum, row) => sum + row.totalDownloads,
+      0,
+    )
+    // Sem downloads de loja configurados, usamos o total de cadastros como
+    // aproximação (mesmo padrão de fallback já usado no card de downloads por loja).
+    const totalDownloads =
+      storeDownloads.configured.ios || storeDownloads.configured.android
+        ? totalDownloadsFromStores
+        : totalSignups
+    const retentionRate = totalAppUsers > 0 ? 1 - usersAtRisk / totalAppUsers : 0
 
     return {
-      kpis: { totalSignups, newSignupsThisMonth },
+      kpis: {
+        totalDownloads,
+        newSignupsThisMonth,
+        retentionRate: Math.round(retentionRate * 1000) / 1000,
+        avgMedicationsPerUser: Math.round(avgMedicationsPerUser * 10) / 10,
+      },
       series,
       stateDistribution: stateBreakdown.map((row) => ({
         state: row.state ?? 'Não informado',
@@ -365,6 +413,13 @@ export const reportsService = {
       // plataforma/período, sem geografia nem vínculo com usuário individual.
       // `configured` indica quais integrações têm credenciais habilitadas.
       storeDownloads: storeDownloads,
+      // Só cadastros feitos depois do campo `city` existir têm cidade — base
+      // antiga fica de fora do ranking (mesma ressalva já aplicada ao `state`).
+      topMunicipalities: topMunicipalitiesRows.map((row) => ({
+        city: row.city as string,
+        state: row.state ?? 'N/D',
+        count: row._count._all,
+      })),
     }
   },
 
@@ -390,7 +445,7 @@ export const reportsService = {
       totalMedications,
       continuousUseCount,
       createdThisMonth,
-      distinctMembers,
+      avgPerUser,
     ] = await Promise.all([
       reportsRepository.countMedicationsFiltered(filters),
       reportsRepository.findMedications(filters, pagination),
@@ -399,10 +454,8 @@ export const reportsService = {
       reportsRepository.countMedications(),
       reportsRepository.countMedicationsContinuousUse(),
       reportsRepository.countMedicationsCreatedSince(startOfMonth),
-      reportsRepository.countDistinctMedicationMembers(),
+      reportsRepository.averageMedicationsPerUser(),
     ])
-
-    const avgPerUser = distinctMembers.length > 0 ? totalMedications / distinctMembers.length : 0
 
     return {
       kpis: {
