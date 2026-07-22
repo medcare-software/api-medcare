@@ -1,15 +1,41 @@
 import { z } from 'zod'
 
-const SupplierCategoryEnum = z.enum(['INFRASTRUCTURE', 'SERVICES', 'MARKETING', 'TAX'])
-const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
+const SupplierCategoryEnum = z.enum([
+  'INFRASTRUCTURE',
+  'SERVICES',
+  'MARKETING',
+  'TAX',
+  'EQUIPMENT',
+  'SOFTWARE',
+  'RENT',
+  'UTILITIES',
+])
+const PaymentMethodEnum = z.enum(['PIX', 'BOLETO'])
 const AccountPayableTypeEnum = z.enum(['ONE_TIME', 'RECURRING'])
-const AccountPayableStatusEnum = z.enum(['PAID', 'PENDING', 'OVERDUE', 'PAID_LATE'])
+const AccountPayableStatusEnum = z.enum(['PAID', 'PENDING', 'OVERDUE', 'PAID_LATE', 'CANCELLED'])
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
 
 function startOfToday(): Date {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), now.getDate())
 }
+
+// Extrai ano/mês da string "YYYY-MM-DD" e reconstrói como meia-noite no fuso
+// local do servidor — igual a `new Date(y, m, 1)` usado em
+// financial.repository.ts#currentReferenceMonth() e em
+// payments.service.ts#ensurePaymentsGenerated(). Não usar z.coerce.date()
+// direto aqui: isso interpretaria a string como UTC e, num servidor fora de
+// UTC, o valor resultante não bateria com o `referenceMonth` gravado no banco
+// (comparação é por igualdade exata, não por range).
+export const ReferenceMonthSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}(-\d{2})?$/)
+  .transform((value) => {
+    const parts = value.split('-')
+    const year = Number(parts[0])
+    const month = Number(parts[1])
+    return new Date(year, month - 1, 1)
+  })
 
 // Só metadados de exibição (frequência/término) — não dispara geração automática
 // de próximas ocorrências, cobrança aqui é sempre manual.
@@ -19,6 +45,12 @@ const RecurrenceConfigSchema = z.object({
   endType: z.enum(['never', 'after_occurrences', 'on_date']),
   occurrencesCount: z.number().int().positive().optional(),
   endDateIso: z.string().optional(),
+  // Só relevante quando frequency === 'mes' — refina a recorrência mensal
+  // entre "todo dia X do mês" (fixed_day) e "toda Nª semana do mês" (nth_weekday).
+  monthlyMode: z.enum(['fixed_day', 'nth_weekday']).optional(),
+  weekOfMonth: z
+    .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+    .optional(),
 })
 
 export const CreateSupplierSchema = z.object({
@@ -42,6 +74,8 @@ export const ListSuppliersQuerySchema = z.object({
   status: StatusEnum.optional(),
   category: SupplierCategoryEnum.optional(),
   search: z.string().min(1).optional(),
+  createdFrom: z.coerce.date().optional(),
+  createdTo: z.coerce.date().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 })
@@ -75,10 +109,15 @@ export const UpdateAccountPayableSchema = z.object({
   type: AccountPayableTypeEnum.optional(),
   recurrence: RecurrenceConfigSchema.optional(),
   receiptFileId: z.string().min(1).optional(),
+  notes: z.string().optional(),
 })
 
 export const MarkPaidSchema = z.object({
   receiptFileId: z.string().min(1).optional(),
+  paidAt: z.coerce.date().optional(),
+  paymentMethod: PaymentMethodEnum.optional(),
+  valueCents: z.number().int().positive().optional(),
+  notes: z.string().optional(),
 })
 
 export const ListAccountsPayableQuerySchema = z.object({
@@ -97,8 +136,21 @@ export const ListReceivablesQuerySchema = z.object({
   paymentMethod: PaymentMethodEnum.optional(),
   planId: z.string().min(1).optional(),
   search: z.string().min(1).optional(),
+  dueDateFrom: z.coerce.date().optional(),
+  dueDateTo: z.coerce.date().optional(),
+  referenceMonth: ReferenceMonthSchema.optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
+})
+
+export const PayReceivableSchema = z.object({
+  paidAt: z.coerce.date().optional(),
+  paymentMethod: PaymentMethodEnum.optional(),
+  valueCents: z.number().int().positive().optional(),
+})
+
+export const CancelReceivableSchema = z.object({
+  reason: z.string().min(1),
 })
 
 export type CreateSupplierInput = z.infer<typeof CreateSupplierSchema>
@@ -110,3 +162,5 @@ export type MarkPaidInput = z.infer<typeof MarkPaidSchema>
 export type ListAccountsPayableQuery = z.infer<typeof ListAccountsPayableQuerySchema>
 export type RecurrenceConfigInput = z.infer<typeof RecurrenceConfigSchema>
 export type ListReceivablesQuery = z.infer<typeof ListReceivablesQuerySchema>
+export type PayReceivableInput = z.infer<typeof PayReceivableSchema>
+export type CancelReceivableInput = z.infer<typeof CancelReceivableSchema>

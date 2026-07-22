@@ -2,12 +2,15 @@ import type { FastifyInstance } from 'fastify'
 
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import {
+  CancelReceivableSchema,
   CreateAccountPayableSchema,
   CreateSupplierSchema,
   ListAccountsPayableQuerySchema,
   ListReceivablesQuerySchema,
   ListSuppliersQuerySchema,
   MarkPaidSchema,
+  PayReceivableSchema,
+  ReferenceMonthSchema,
   UpdateAccountPayableSchema,
   UpdateSupplierSchema,
 } from './financial.schema.js'
@@ -205,12 +208,23 @@ export default async function financialRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // GET /accounts-receivable/summary — KPIs (contagem por status + valor mensal projetado)
+  // GET /accounts-receivable/summary?referenceMonth= — KPIs (contagem por status + valor mensal projetado)
   fastify.get(
     '/accounts-receivable/summary',
     { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
-    async (_req, reply) => {
-      const summary = await financialService.getReceivablesSummary()
+    async (req, reply) => {
+      const { referenceMonth: rawReferenceMonth } = req.query as { referenceMonth?: string }
+      const parsed = rawReferenceMonth
+        ? ReferenceMonthSchema.safeParse(rawReferenceMonth)
+        : undefined
+      if (parsed && !parsed.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: parsed.error.issues,
+        })
+      }
+      const summary = await financialService.getReceivablesSummary(parsed?.data)
       return reply.status(200).send({ data: summary })
     },
   )
@@ -234,6 +248,44 @@ export default async function financialRoutes(fastify: FastifyInstance) {
         data: items,
         meta: { total, page: query.data.page, pageSize: query.data.pageSize },
       })
+    },
+  )
+
+  // POST /accounts-receivable/:id/pay
+  fastify.post(
+    '/accounts-receivable/:id/pay',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const body = PayReceivableSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      const receivable = await financialService.payReceivable(req.user, id, body.data)
+      return reply.status(200).send({ data: receivable })
+    },
+  )
+
+  // POST /accounts-receivable/:id/cancel
+  fastify.post(
+    '/accounts-receivable/:id/cancel',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const body = CancelReceivableSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      const receivable = await financialService.cancelReceivable(req.user, id, body.data)
+      return reply.status(200).send({ data: receivable })
     },
   )
 }

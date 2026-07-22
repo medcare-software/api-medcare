@@ -34,21 +34,19 @@ export async function ensurePaymentsGenerated(subscription: Subscription) {
   }
   if (referenceMonths.length === 0) return
 
-  const rows = referenceMonths.map((referenceMonth, index) => {
+  // Status na geração depende só da data de vencimento, nunca de
+  // Subscription.status (que na prática nunca é escrito em lugar nenhum do
+  // código pra 'LATE') — um ciclo só vira PAID/PAID_LATE quando alguém
+  // confirma o recebimento de verdade (ver financialService#payReceivable).
+  const rows = referenceMonths.map((referenceMonth) => {
     const dueDate = new Date(referenceMonth.getFullYear(), referenceMonth.getMonth(), billingDay)
-    const isLast = index === referenceMonths.length - 1
-    const isPast = dueDate <= now
-    const status = !isPast
-      ? 'PENDING'
-      : isLast && subscription.status === 'LATE'
-        ? 'OVERDUE'
-        : 'PAID'
+    const status = dueDate > now ? 'PENDING' : 'OVERDUE'
     return {
       subscriptionId: subscription.id,
       referenceMonth,
       amountCents,
       dueDate,
-      paidAt: status === 'PAID' ? dueDate : null,
+      paidAt: null,
       paymentMethod: subscription.paymentMethod,
       status,
     } as const

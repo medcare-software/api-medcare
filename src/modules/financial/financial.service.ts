@@ -17,12 +17,14 @@ import { ensurePaymentsGenerated } from '../payments/payments.service.js'
 import { plansRepository } from '../plans/plans.repository.js'
 import { financialRepository } from './financial.repository.js'
 import type {
+  CancelReceivableInput,
   CreateAccountPayableInput,
   CreateSupplierInput,
   ListAccountsPayableQuery,
   ListReceivablesQuery,
   ListSuppliersQuery,
   MarkPaidInput,
+  PayReceivableInput,
   UpdateAccountPayableInput,
   UpdateSupplierInput,
 } from './financial.schema.js'
@@ -70,6 +72,7 @@ const OPEN_ACCOUNT_PAYABLE_STATUSES = ['PAID', 'PAID_LATE']
 async function ensureCurrentMonthReceivables() {
   const subscriptions = await plansRepository.findActiveOrLateSubscriptions()
   await Promise.all(subscriptions.map((subscription) => ensurePaymentsGenerated(subscription)))
+  await financialRepository.markOverdueReceivables()
 }
 
 export const financialService = {
@@ -106,6 +109,8 @@ export const financialService = {
       ...(query.status && { status: query.status }),
       ...(query.category && { category: query.category }),
       ...(query.search && { search: query.search }),
+      ...(query.createdFrom && { createdFrom: query.createdFrom }),
+      ...(query.createdTo && { createdTo: query.createdTo }),
     }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
     const [suppliers, total] = await Promise.all([
@@ -204,6 +209,7 @@ export const financialService = {
   },
 
   async listAccountsPayable(query: ListAccountsPayableQuery) {
+    await financialRepository.markOverdueAccountsPayable()
     const filters = {
       ...(query.supplierId && { supplierId: query.supplierId }),
       ...(query.status && { status: query.status }),
@@ -261,12 +267,19 @@ export const financialService = {
       throw new AppError({ code: 'CONFLICT', message: 'Conta já está paga' })
     }
 
-    const paidAt = new Date()
+    const paidAt = input.paidAt ?? new Date()
     const status = paidAt <= accountPayable.dueDate ? 'PAID' : 'PAID_LATE'
 
     const updated = await financialRepository.markPaid(
       id,
-      omitUndefined({ status, paidAt, receiptFileId: input.receiptFileId }),
+      omitUndefined({
+        status,
+        paidAt,
+        paymentMethod: input.paymentMethod,
+        valueCents: input.valueCents,
+        receiptFileId: input.receiptFileId,
+        notes: input.notes,
+      }),
     )
     await recordAuditEvent({
       actorId: user.id,
@@ -299,6 +312,9 @@ export const financialService = {
       ...(query.paymentMethod && { paymentMethod: query.paymentMethod }),
       ...(query.planId && { planId: query.planId }),
       ...(query.search && { search: query.search }),
+      ...(query.dueDateFrom && { dueDateFrom: query.dueDateFrom }),
+      ...(query.dueDateTo && { dueDateTo: query.dueDateTo }),
+      ...(query.referenceMonth && { referenceMonth: query.referenceMonth }),
     }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
     const [payments, total] = await Promise.all([
@@ -319,6 +335,8 @@ export const financialService = {
         id: payment.id,
         clientName,
         clientDocument,
+        clinicId: subscription.clinic?.id ?? null,
+        doctorId: subscription.doctor?.id ?? null,
         planName: subscription.plan.name,
         valueCents: payment.amountCents,
         dueDate: payment.dueDate,
@@ -330,12 +348,62 @@ export const financialService = {
     return { items, total }
   },
 
-  async getReceivablesSummary() {
+  async getReceivablesSummary(referenceMonth?: Date) {
     await ensureCurrentMonthReceivables()
-    return financialRepository.summarizeReceivables()
+    return financialRepository.summarizeReceivables(referenceMonth)
+  },
+
+  async payReceivable(user: AuthUser, id: string, input: PayReceivableInput) {
+    const receivable = await financialRepository.findReceivableById(id)
+    if (!receivable) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Cobrança não encontrada' })
+    }
+    if (['PAID', 'PAID_LATE', 'CANCELLED'].includes(receivable.status)) {
+      throw new AppError({ code: 'CONFLICT', message: 'Cobrança já está paga ou cancelada' })
+    }
+
+    const paidAt = input.paidAt ?? new Date()
+    const status = paidAt <= receivable.dueDate ? 'PAID' : 'PAID_LATE'
+
+    const updated = await financialRepository.updateReceivable(
+      id,
+      omitUndefined({
+        status,
+        paidAt,
+        paymentMethod: input.paymentMethod,
+        amountCents: input.valueCents,
+      }),
+    )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'PAY_RECEIVABLE',
+      targetType: 'Payment',
+      targetId: id,
+    })
+    return updated
+  },
+
+  async cancelReceivable(user: AuthUser, id: string, input: CancelReceivableInput) {
+    const receivable = await financialRepository.findReceivableById(id)
+    if (!receivable) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Cobrança não encontrada' })
+    }
+    if (['PAID', 'PAID_LATE', 'CANCELLED'].includes(receivable.status)) {
+      throw new AppError({ code: 'CONFLICT', message: 'Cobrança já está paga ou cancelada' })
+    }
+
+    const updated = await financialRepository.cancelReceivable(id, input.reason)
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'CANCEL_RECEIVABLE',
+      targetType: 'Payment',
+      targetId: id,
+    })
+    return updated
   },
 
   async getAccountsPayableSummary() {
+    await financialRepository.markOverdueAccountsPayable()
     const summary = await financialRepository.summarizeAccountsPayable()
     const monthStart = new Date()
     monthStart.setDate(1)

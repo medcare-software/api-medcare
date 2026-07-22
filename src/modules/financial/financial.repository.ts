@@ -14,6 +14,8 @@ type SupplierListFilters = {
   status?: UserStatus
   category?: SupplierCategory
   search?: string
+  createdFrom?: Date
+  createdTo?: Date
 }
 
 type CreateSupplierData = {
@@ -64,12 +66,23 @@ type UpdateAccountPayableData = {
   type?: AccountPayableType
   recurrence?: Prisma.InputJsonValue
   receiptFileId?: string
+  notes?: string
 }
 
 type MarkPaidData = {
   status: AccountPayableStatus
   paidAt: Date
+  paymentMethod?: PaymentMethod
+  valueCents?: number
   receiptFileId?: string
+  notes?: string
+}
+
+type UpdateReceivableData = {
+  status: AccountPayableStatus
+  paidAt: Date
+  paymentMethod?: PaymentMethod
+  amountCents?: number
 }
 
 type ReceivablesListFilters = {
@@ -77,10 +90,14 @@ type ReceivablesListFilters = {
   paymentMethod?: PaymentMethod
   planId?: string
   search?: string
+  dueDateFrom?: Date
+  dueDateTo?: Date
+  referenceMonth?: Date
 }
 
-// Primeiro dia do mês corrente — todo cálculo de "Contas a receber" é escopado
-// ao ciclo de cobrança atual (ver comentário de summarizeReceivables).
+// Primeiro dia do mês corrente — usado como fallback quando nenhum
+// `referenceMonth` é passado explicitamente (filtro de mês no cabeçalho do
+// Financeiro, ver financial.service.ts).
 function currentReferenceMonth(): Date {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -88,9 +105,15 @@ function currentReferenceMonth(): Date {
 
 function receivablesWhere(filters: ReceivablesListFilters): Prisma.PaymentWhereInput {
   return {
-    referenceMonth: currentReferenceMonth(),
+    referenceMonth: filters.referenceMonth ?? currentReferenceMonth(),
     ...(filters.status && { status: filters.status }),
     ...(filters.paymentMethod && { paymentMethod: filters.paymentMethod }),
+    ...((filters.dueDateFrom || filters.dueDateTo) && {
+      dueDate: {
+        ...(filters.dueDateFrom && { gte: filters.dueDateFrom }),
+        ...(filters.dueDateTo && { lte: filters.dueDateTo }),
+      },
+    }),
     ...((filters.planId || filters.search) && {
       subscription: {
         ...(filters.planId && { planId: filters.planId }),
@@ -121,6 +144,12 @@ export const financialRepository = {
             { email: { contains: filters.search, mode: 'insensitive' } },
           ],
         }),
+        ...((filters.createdFrom || filters.createdTo) && {
+          createdAt: {
+            ...(filters.createdFrom && { gte: filters.createdFrom }),
+            ...(filters.createdTo && { lte: filters.createdTo }),
+          },
+        }),
       },
       orderBy: { createdAt: 'desc' },
       skip: pagination.skip,
@@ -138,6 +167,12 @@ export const financialRepository = {
             { name: { contains: filters.search, mode: 'insensitive' } },
             { email: { contains: filters.search, mode: 'insensitive' } },
           ],
+        }),
+        ...((filters.createdFrom || filters.createdTo) && {
+          createdAt: {
+            ...(filters.createdFrom && { gte: filters.createdFrom }),
+            ...(filters.createdTo && { lte: filters.createdTo }),
+          },
         }),
       },
     })
@@ -162,6 +197,22 @@ export const financialRepository = {
   countOpenPayablesForSupplier(supplierId: string) {
     return db.accountPayable.count({
       where: { supplierId, status: { in: ['PENDING', 'OVERDUE'] } },
+    })
+  },
+
+  // Não há job agendado no projeto pra fechar cobranças vencidas — sincronização
+  // preguiçosa (lazy), chamada antes de toda listagem/resumo (ver financial.service.ts).
+  markOverdueAccountsPayable() {
+    return db.accountPayable.updateMany({
+      where: { status: 'PENDING', dueDate: { lt: new Date() } },
+      data: { status: 'OVERDUE' },
+    })
+  },
+
+  markOverdueReceivables() {
+    return db.payment.updateMany({
+      where: { status: 'PENDING', dueDate: { lt: new Date() } },
+      data: { status: 'OVERDUE' },
     })
   },
 
@@ -246,8 +297,8 @@ export const financialRepository = {
         subscription: {
           include: {
             plan: { select: { name: true } },
-            clinic: { select: { tradeName: true, cnpjEncrypted: true } },
-            doctor: { select: { user: { select: { name: true, cpfEncrypted: true } } } },
+            clinic: { select: { id: true, tradeName: true, cnpjEncrypted: true } },
+            doctor: { select: { id: true, user: { select: { name: true, cpfEncrypted: true } } } },
           },
         },
       },
@@ -255,6 +306,18 @@ export const financialRepository = {
       skip: pagination.skip,
       take: pagination.take,
     })
+  },
+
+  findReceivableById(id: string) {
+    return db.payment.findUnique({ where: { id } })
+  },
+
+  updateReceivable(id: string, data: UpdateReceivableData) {
+    return db.payment.update({ where: { id }, data: omitUndefined(data) })
+  },
+
+  cancelReceivable(id: string, reason: string) {
+    return db.payment.update({ where: { id }, data: { status: 'CANCELLED', cancelReason: reason } })
   },
 
   countReceivables(filters: ReceivablesListFilters) {
@@ -302,10 +365,10 @@ export const financialRepository = {
   // existem (ensureCurrentMonthReceivables) antes de chamar esta função.
   // Recebido = PAID/PAID_LATE, Pendente = PENDING (vence este mês, não pago),
   // Inadimplentes = OVERDUE (já passou do vencimento). Total = soma dos três.
-  async summarizeReceivables() {
+  async summarizeReceivables(referenceMonth?: Date) {
     const rows = await db.payment.groupBy({
       by: ['status'],
-      where: { referenceMonth: currentReferenceMonth() },
+      where: { referenceMonth: referenceMonth ?? currentReferenceMonth() },
       _sum: { amountCents: true },
       _count: { _all: true },
     })
