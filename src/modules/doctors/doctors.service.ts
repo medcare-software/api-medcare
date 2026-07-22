@@ -251,6 +251,13 @@ export const doctorsService = {
         ...(input.crmState && { crmState: input.crmState.toUpperCase() }),
       }),
     )
+
+    // Cascateia pra conta de login: sem isso, o toggle "Inativo" na tela admin
+    // marcava só Doctor.status e o médico continuava conseguindo logar.
+    if (input.status !== undefined && input.status !== doctor.status) {
+      await doctorsRepository.setUserActiveStatus(doctor.userId, input.status)
+    }
+
     await recordAuditEvent({
       actorId: user.id,
       action: 'UPDATE_DOCTOR',

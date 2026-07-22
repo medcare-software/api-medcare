@@ -233,6 +233,20 @@ export const doctorsRepository = {
     return db.diagnostic.count({ where: { doctorId } })
   },
 
+  // Cascateia o status do médico pra conta de login (User) — o toggle da tela
+  // admin (doctorsService.update) só mexia em Doctor.status antes disso, então
+  // inativar não derrubava o acesso de verdade. Ao reativar, restaura o login
+  // mas não "des-revoga" tokens antigos — o médico só precisa logar de novo.
+  async setUserActiveStatus(userId: string, status: UserStatus) {
+    await db.user.update({ where: { id: userId }, data: { status } })
+    if (status === 'INACTIVE') {
+      await db.refreshToken.updateMany({
+        where: { userId, revoked: false },
+        data: { revoked: true, revokedAt: new Date() },
+      })
+    }
+  },
+
   deactivateTx(doctorId: string, userId: string) {
     return db.$transaction([
       db.doctor.update({
