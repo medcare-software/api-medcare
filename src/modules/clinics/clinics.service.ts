@@ -237,7 +237,7 @@ export const clinicsService = {
         planId: input.planId,
         clinicId: clinic.id,
         paymentMethod: input.paymentMethod,
-        nextDueDate: computeNextDueDate(plan.billingCycle),
+        nextDueDate: input.nextDueDate ?? computeNextDueDate(plan.billingCycle),
         billingAddress: input.billingAddress,
       })
     }
@@ -339,6 +339,15 @@ export const clinicsService = {
       )
     }
 
+    // Cascateia pra conta de login do admin: sem isso, o toggle "Inativo" na
+    // tela admin marcava só Clinic.status e o CLINIC_ADMIN continuava logando.
+    if (input.status !== undefined && input.status !== clinic.status) {
+      const adminUserId = await clinicsRepository.findAdminUserId(id)
+      if (adminUserId) {
+        await clinicsRepository.setUserActiveStatus(adminUserId, input.status)
+      }
+    }
+
     await recordAuditEvent({
       actorId: user.id,
       action: 'UPDATE_CLINIC',
@@ -367,7 +376,8 @@ export const clinicsService = {
     if (!clinic) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Clínica não encontrada' })
     }
-    await clinicsRepository.deactivateTx(id)
+    const adminUserId = await clinicsRepository.findAdminUserId(id)
+    await clinicsRepository.deactivateTx(id, adminUserId)
     await recordAuditEvent({
       actorId: user.id,
       action: 'DEACTIVATE_CLINIC',
@@ -450,5 +460,26 @@ export const clinicsService = {
       metadata: { doctorId },
     })
     return updated
+  },
+
+  // Diferente de toggleDoctorLink (soft, reversível), aqui o vínculo é apagado
+  // de vez — usado pelo botão "Remover acesso médico" da aba Médicos internos.
+  async unlinkDoctor(user: AuthUser, clinicId: string, doctorId: string) {
+    const scopedClinicId = await resolveScopedClinicId(user, clinicId)
+
+    const link = await clinicsRepository.findLink(scopedClinicId, doctorId)
+    if (!link) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Vínculo não encontrado' })
+    }
+
+    await clinicsRepository.unlinkDoctor(scopedClinicId, doctorId)
+    await recalculateExtraDoctorsCharge(scopedClinicId)
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UNLINK_DOCTOR_FROM_CLINIC',
+      targetType: 'Clinic',
+      targetId: scopedClinicId,
+      metadata: { doctorId },
+    })
   },
 }

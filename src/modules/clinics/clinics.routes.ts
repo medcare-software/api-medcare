@@ -177,4 +177,15 @@ export default async function clinicsRoutes(fastify: FastifyInstance) {
       return reply.status(200).send({ data: link })
     },
   )
+
+  // DELETE /clinics/:id/doctors/:doctorId — remove definitivamente o vínculo
+  fastify.delete(
+    '/clinics/:id/doctors/:doctorId',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN', 'CLINIC_ADMIN')] },
+    async (req, reply) => {
+      const { id, doctorId } = req.params as { id: string; doctorId: string }
+      await clinicsService.unlinkDoctor(req.user, id, doctorId)
+      return reply.status(204).send()
+    },
+  )
 }

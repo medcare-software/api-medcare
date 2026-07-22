@@ -29,6 +29,9 @@ export const CreateClinicSchema = z.object({
   // para cadastrar a clínica sem assinatura, associada depois pela tela de Planos.
   paymentMethod: PaymentMethodEnum.optional(),
   billingAddress: AddressSchema.optional(),
+  // Sobrescreve o vencimento calculado automaticamente a partir do billingCycle
+  // do plano — vem do campo "Data de cobrança/vencimento" da tela de cadastro.
+  nextDueDate: z.coerce.date().optional(),
 })
 
 export const UpdateClinicSchema = z.object({

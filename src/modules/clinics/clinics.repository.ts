@@ -96,6 +96,26 @@ export const clinicsRepository = {
     return db.clinic.findFirst({ where: { id, deletedAt: null } })
   },
 
+  // Clinic não guarda o userId do admin diretamente — o vínculo é via
+  // ClinicAdminProfile (userId + clinicId). Usado pra cascatear o status da
+  // clínica pra conta de login do admin (ver setUserActiveStatus).
+  async findAdminUserId(clinicId: string) {
+    const profile = await db.clinicAdminProfile.findFirst({ where: { clinicId } })
+    return profile?.userId ?? null
+  },
+
+  // Cascateia o status da clínica pra conta de login do admin — sem isso,
+  // inativar/excluir uma clínica não derrubava o acesso do CLINIC_ADMIN.
+  async setUserActiveStatus(userId: string, status: UserStatus) {
+    await db.user.update({ where: { id: userId }, data: { status } })
+    if (status === 'INACTIVE') {
+      await db.refreshToken.updateMany({
+        where: { userId, revoked: false },
+        data: { revoked: true, revokedAt: new Date() },
+      })
+    }
+  },
+
   createWithAdmin(input: CreateClinicWithAdminData) {
     return db.$transaction(async (tx) => {
       const clinic = await tx.clinic.create({
@@ -162,7 +182,7 @@ export const clinicsRepository = {
     return db.clinic.update({ where: { id }, data: omitUndefined(data) })
   },
 
-  deactivateTx(clinicId: string) {
+  deactivateTx(clinicId: string, adminUserId: string | null) {
     return db.$transaction([
       db.clinic.update({
         where: { id: clinicId },
@@ -175,6 +195,20 @@ export const clinicsRepository = {
         where: { clinicId, status: { in: ['ACTIVE', 'LATE'] } },
         data: { status: 'CANCELLED' },
       }),
+      // Sem isso, excluir a clínica não derrubava o acesso do CLINIC_ADMIN —
+      // mesmo racional de doctors.repository.ts#deactivateTx.
+      ...(adminUserId
+        ? [
+            db.user.update({
+              where: { id: adminUserId },
+              data: { deletedAt: new Date(), status: 'INACTIVE' },
+            }),
+            db.refreshToken.updateMany({
+              where: { userId: adminUserId, revoked: false },
+              data: { revoked: true, revokedAt: new Date() },
+            }),
+          ]
+        : []),
     ])
   },
 
@@ -222,6 +256,10 @@ export const clinicsRepository = {
       where: { clinicId_doctorId: { clinicId, doctorId } },
       data: { active },
     })
+  },
+
+  unlinkDoctor(clinicId: string, doctorId: string) {
+    return db.clinicDoctorLink.delete({ where: { clinicId_doctorId: { clinicId, doctorId } } })
   },
 
   countActiveDoctorLinks(clinicId: string) {
