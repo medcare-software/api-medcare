@@ -6,7 +6,7 @@ export const CreateEmployeeSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   phone: z.string().min(8).optional(),
-  profileLabel: z.string().min(1),
+  profileLabel: z.string().min(1).optional(),
 })
 
 export const UpdateEmployeeSchema = z.object({

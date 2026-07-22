@@ -22,7 +22,7 @@ export default async function employeesRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const employee = await employeesService.create(req.user, body.data)
+      const employee = await employeesService.create(fastify, req.user, body.data)
       return reply.status(201).send({ data: employee })
     },
   )
