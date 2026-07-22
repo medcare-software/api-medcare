@@ -145,6 +145,7 @@ model User {
   role         Role
   phone        String?
   state        String? // UF autodeclarada no cadastro (não sigiloso, sem criptografia)
+  city         String? // cidade autodeclarada no cadastro (não sigiloso, sem criptografia)
   cpfEncrypted Bytes? // AES-256-GCM — nunca em texto plano
   cpfHash      String?    @unique // blind index (HMAC) para busca sem decriptar
   status       UserStatus @default(ACTIVE)

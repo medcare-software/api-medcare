@@ -8,6 +8,7 @@ type CreateFamilyWithAdminData = {
   passwordHash: string
   phone?: string
   state?: string
+  city?: string
   cpfEncrypted: Buffer<ArrayBuffer>
   cpfHash: string
   fullNameEncrypted: Buffer<ArrayBuffer>
@@ -83,6 +84,7 @@ export const familiesRepository = {
           role: 'PATIENT_ADMIN',
           phone: input.phone,
           state: input.state,
+          city: input.city,
           cpfEncrypted: input.cpfEncrypted,
           cpfHash: input.cpfHash,
           status: 'ACTIVE',

@@ -9,6 +9,7 @@ export const RegisterSchema = z.object({
   password: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
   phone: z.string().min(8, { message: 'Telefone inválido' }).optional(),
   state: z.string().length(2).optional(),
+  city: z.string().optional(),
   cpf: z.string().min(11, 'CPF inválido'),
   fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
   displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),

@@ -63,6 +63,7 @@ export const familiesService = {
       passwordHash,
       ...(input.phone !== undefined && { phone: input.phone }),
       ...(input.state !== undefined && { state: input.state.toUpperCase() }),
+      ...(input.city !== undefined && { city: input.city }),
       cpfEncrypted: encryptField(cpfDigits),
       cpfHash,
       fullNameEncrypted: encryptField(input.fullName),
