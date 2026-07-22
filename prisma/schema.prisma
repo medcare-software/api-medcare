@@ -114,6 +114,10 @@ enum SupplierCategory {
   SERVICES
   MARKETING
   TAX
+  EQUIPMENT
+  SOFTWARE
+  RENT
+  UTILITIES
 }
 
 enum AccountPayableType {
@@ -126,6 +130,7 @@ enum AccountPayableStatus {
   PENDING
   OVERDUE
   PAID_LATE
+  CANCELLED
 }
 
 enum NotificationChannel {
@@ -158,6 +163,7 @@ model User {
   familyMember        FamilyMember?
   doctor              Doctor?
   clinicAdminProfile  ClinicAdminProfile?
+  employeeProfile     Employee?
   refreshTokens       RefreshToken[]
   caregiverAccesses   CaregiverAccess[]
   auditLogs           AuditLog[]
@@ -734,7 +740,8 @@ model Payment {
   dueDate        DateTime
   paidAt         DateTime?
   paymentMethod  PaymentMethod
-  status         AccountPayableStatus @default(PENDING) // reaproveita o enum já existente (PAID/PENDING/OVERDUE/PAID_LATE)
+  status         AccountPayableStatus @default(PENDING) // reaproveita o enum já existente (PAID/PENDING/OVERDUE/PAID_LATE/CANCELLED)
+  cancelReason   String? // motivo informado ao cancelar a cobrança (status CANCELLED)
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -778,6 +785,7 @@ model AccountPayable {
   status        AccountPayableStatus @default(PENDING)
   paidAt        DateTime?
   receiptFileId String?
+  notes         String? // observações registradas ao confirmar o pagamento
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 
@@ -850,12 +858,33 @@ model Employee {
   // sem FK real, o sistema de perfis/permissões (ACCESS_PROFILES) continua mockado.
   profileLabel String
   status       UserStatus @default(ACTIVE)
+  // Conta de login vinculada (role PLATFORM_ADMIN), criada junto com o funcionário
+  // — nullable só pra não quebrar linhas antigas anteriores a essa coluna.
+  userId       String?    @unique
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
 
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([status])
   @@map("employees")
+}
+
+// E-mails de laboratórios cadastrados pelo admin da plataforma — usados
+// futuramente por uma IA para ler resultados/informações enviadas pelos
+// laboratórios. Por enquanto só o cadastro (CRUD) existe, sem a leitura.
+model LabEmail {
+  id        String     @id @default(cuid())
+  name      String
+  email     String     @unique
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@map("lab_emails")
 }
 
 // ─────────────────────────────────────────────
