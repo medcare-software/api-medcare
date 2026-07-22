@@ -54,8 +54,10 @@ type CreateSubscriptionData = {
 }
 
 type UpdateSubscriptionData = {
+  planId?: string
   nextDueDate?: Date
   paymentMethod?: PaymentMethod
+  billingAddress?: Prisma.InputJsonValue
   status?: SubscriptionStatus
 }
 
@@ -144,6 +146,12 @@ export const plansRepository = {
         status: { in: ['ACTIVE', 'LATE'] },
       },
     })
+  },
+
+  // Usado pelo Financeiro > Receber pra garantir que o Payment do ciclo atual
+  // existe pra toda assinatura em dia/atrasada antes de somar os KPIs.
+  findActiveOrLateSubscriptions() {
+    return db.subscription.findMany({ where: { status: { in: ['ACTIVE', 'LATE'] } } })
   },
 
   createSubscription(data: CreateSubscriptionData) {

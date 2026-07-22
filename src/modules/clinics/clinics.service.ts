@@ -93,6 +93,51 @@ async function assertWithinDoctorLimit(clinicId: string) {
   }
 }
 
+// Mantém Subscription sincronizada com Clinic.planId sempre que o admin
+// atribui/troca/remove o plano pela aba Faturamento — sem isso a assinatura
+// nunca é criada (update() só gravava planId na própria Clinic) e a UI
+// (próximo vencimento, status, forma de pagamento, endereço de cobrança) fica
+// presa em "sem assinatura" mesmo com plano definido.
+async function syncClinicSubscription(
+  user: AuthUser,
+  clinicId: string,
+  newPlanId: string | null,
+  paymentMethod: UpdateClinicInput['paymentMethod'],
+  billingAddress: UpdateClinicInput['billingAddress'],
+) {
+  const existing = await plansRepository.findActiveOrLateSubscription({ clinicId })
+
+  if (!newPlanId) {
+    if (existing) await plansService.cancelSubscription(user, existing.id)
+    return
+  }
+
+  const plan = await plansRepository.findById(newPlanId)
+  if (!plan) return
+
+  if (!existing) {
+    // Primeira assinatura da clínica só pode ser aberta com forma de pagamento definida.
+    if (!paymentMethod) return
+    await plansService.createSubscription(user, {
+      planId: newPlanId,
+      clinicId,
+      paymentMethod,
+      nextDueDate: computeNextDueDate(plan.billingCycle),
+      ...(billingAddress !== undefined && { billingAddress }),
+    })
+    return
+  }
+
+  const planChanged = existing.planId !== newPlanId
+  if (!planChanged && !paymentMethod && billingAddress === undefined) return
+
+  await plansService.updateSubscription(user, existing.id, {
+    ...(planChanged && { planId: newPlanId, nextDueDate: computeNextDueDate(plan.billingCycle) }),
+    ...(paymentMethod && { paymentMethod }),
+    ...(billingAddress !== undefined && { billingAddress }),
+  })
+}
+
 // Chamado após todo vínculo/desvínculo de médico — mantém Subscription.extraDoctorsCount
 // consistente com o número de médicos ativos acima de Plan.includedDoctors. Sem limite
 // configurado ou sem assinatura ativa/atrasada, não há o que recalcular.
@@ -283,6 +328,17 @@ export const clinicsService = {
         ...cnpjFields,
       }),
     )
+
+    if (input.planId !== undefined && input.planId !== clinic.planId) {
+      await syncClinicSubscription(
+        user,
+        id,
+        input.planId,
+        input.paymentMethod,
+        input.billingAddress,
+      )
+    }
+
     await recordAuditEvent({
       actorId: user.id,
       action: 'UPDATE_CLINIC',

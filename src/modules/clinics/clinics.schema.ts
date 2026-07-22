@@ -40,6 +40,12 @@ export const UpdateClinicSchema = z.object({
   address: AddressSchema.optional(),
   planId: z.string().min(1).nullable().optional(),
   status: StatusEnum.optional(),
+  // Só usados quando planId muda — abrem/atualizam a Subscription da clínica
+  // (ver clinicsService.update). Obrigatórios apenas na primeira assinatura;
+  // ao trocar de plano com assinatura já existente, mantêm os valores atuais
+  // se omitidos.
+  paymentMethod: PaymentMethodEnum.optional(),
+  billingAddress: AddressSchema.optional(),
 })
 
 export const UpdateClinicSelfSchema = z.object({

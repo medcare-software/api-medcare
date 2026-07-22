@@ -13,6 +13,8 @@ import {
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { omitUndefined } from '../../shared/utils/index.js'
+import { ensurePaymentsGenerated } from '../payments/payments.service.js'
+import { plansRepository } from '../plans/plans.repository.js'
 import { financialRepository } from './financial.repository.js'
 import type {
   CreateAccountPayableInput,
@@ -60,6 +62,15 @@ function revealSupplier(supplier: Supplier) {
 }
 
 const OPEN_ACCOUNT_PAYABLE_STATUSES = ['PAID', 'PAID_LATE']
+
+// Garante que o Payment do ciclo atual existe pra toda assinatura em dia/atrasada
+// antes de calcular "Contas a receber" — sem isso, assinaturas cujo histórico
+// nunca foi consultado (ninguém abriu "Ver histórico de pagamentos") ficariam de
+// fora do cálculo, já que a geração de Payment é preguiçosa (ver payments.service.ts).
+async function ensureCurrentMonthReceivables() {
+  const subscriptions = await plansRepository.findActiveOrLateSubscriptions()
+  await Promise.all(subscriptions.map((subscription) => ensurePaymentsGenerated(subscription)))
+}
 
 export const financialService = {
   async createSupplier(user: AuthUser, input: CreateSupplierInput) {
@@ -277,10 +288,12 @@ export const financialService = {
     await financialRepository.deleteAccountPayable(id)
   },
 
-  // Não há cobrança/fatura real (sem gateway de pagamento) — "contas a receber" é uma
-  // visão gerencial derivada de Subscription, mesmo padrão de maskCnpj/maskCpf usado
-  // em clinics/doctors: mascara pra exibição, sem gravar AuditLog (não é reveal completo).
+  // "Contas a receber" deriva de Payment (cobrança por ciclo, ver Subscription/
+  // Payment no schema) — mesmo padrão de maskCnpj/maskCpf usado em clinics/doctors:
+  // mascara pra exibição, sem gravar AuditLog (não é reveal completo).
   async listReceivables(query: ListReceivablesQuery) {
+    await ensureCurrentMonthReceivables()
+
     const filters = {
       ...(query.status && { status: query.status }),
       ...(query.paymentMethod && { paymentMethod: query.paymentMethod }),
@@ -288,12 +301,13 @@ export const financialService = {
       ...(query.search && { search: query.search }),
     }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
-    const [subscriptions, total] = await Promise.all([
+    const [payments, total] = await Promise.all([
       financialRepository.findManyReceivables(filters, pagination),
       financialRepository.countReceivables(filters),
     ])
 
-    const items = subscriptions.map((subscription) => {
+    const items = payments.map((payment) => {
+      const { subscription } = payment
       const clientName = subscription.clinic?.tradeName ?? subscription.doctor?.user.name ?? '—'
       const clientDocument = subscription.clinic
         ? maskCnpj(decryptField(subscription.clinic.cnpjEncrypted))
@@ -302,14 +316,14 @@ export const financialService = {
           : null
 
       return {
-        id: subscription.id,
+        id: payment.id,
         clientName,
         clientDocument,
         planName: subscription.plan.name,
-        valueCents: Math.round(Number(subscription.plan.basePrice) * 100),
-        dueDate: subscription.nextDueDate,
-        paymentMethod: subscription.paymentMethod,
-        status: subscription.status,
+        valueCents: payment.amountCents,
+        dueDate: payment.dueDate,
+        paymentMethod: payment.paymentMethod,
+        status: payment.status,
       }
     })
 
@@ -317,6 +331,7 @@ export const financialService = {
   },
 
   async getReceivablesSummary() {
+    await ensureCurrentMonthReceivables()
     return financialRepository.summarizeReceivables()
   },
 
@@ -325,7 +340,8 @@ export const financialService = {
     const monthStart = new Date()
     monthStart.setDate(1)
     monthStart.setHours(0, 0, 0, 0)
-    const suppliersCreatedThisMonth = await financialRepository.countSuppliersCreatedSince(monthStart)
+    const suppliersCreatedThisMonth =
+      await financialRepository.countSuppliersCreatedSince(monthStart)
     return { ...summary, suppliersCreatedThisMonth }
   },
 }

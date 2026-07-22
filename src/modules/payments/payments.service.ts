@@ -10,9 +10,10 @@ import type { ListClinicPaymentsQuery } from './payments.schema.js'
 
 // Não há job agendado no projeto pra fechar cobranças mês a mês — os registros
 // de Payment são gerados de forma preguiçosa (lazy) sempre que o histórico é
-// consultado, cobrindo todos os meses de referência entre a criação da
-// assinatura e o mês atual.
-async function ensurePaymentsGenerated(subscription: Subscription) {
+// consultado (pelo módulo payments) ou sempre que o Financeiro > Receber é
+// calculado (pelo módulo financial, ver financial.service.ts), cobrindo todos
+// os meses de referência entre a criação da assinatura e o mês atual.
+export async function ensurePaymentsGenerated(subscription: Subscription) {
   const plan = await plansRepository.findById(subscription.planId)
   if (!plan) return
 

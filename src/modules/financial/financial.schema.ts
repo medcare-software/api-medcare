@@ -5,7 +5,11 @@ const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
 const AccountPayableTypeEnum = z.enum(['ONE_TIME', 'RECURRING'])
 const AccountPayableStatusEnum = z.enum(['PAID', 'PENDING', 'OVERDUE', 'PAID_LATE'])
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
-const SubscriptionStatusEnum = z.enum(['ACTIVE', 'LATE', 'CANCELLED'])
+
+function startOfToday(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
 
 // Só metadados de exibição (frequência/término) — não dispara geração automática
 // de próximas ocorrências, cobrança aqui é sempre manual.
@@ -42,17 +46,26 @@ export const ListSuppliersQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 })
 
-export const CreateAccountPayableSchema = z.object({
-  supplierId: z.string().min(1),
-  description: z.string().min(1),
-  category: SupplierCategoryEnum,
-  valueCents: z.number().int().positive(),
-  dueDate: z.coerce.date(),
-  paymentMethod: PaymentMethodEnum,
-  type: AccountPayableTypeEnum.default('ONE_TIME'),
-  recurrence: RecurrenceConfigSchema.optional(),
-})
+export const CreateAccountPayableSchema = z
+  .object({
+    supplierId: z.string().min(1),
+    description: z.string().min(1),
+    category: SupplierCategoryEnum,
+    valueCents: z.number().int().positive(),
+    dueDate: z.coerce.date(),
+    paymentMethod: PaymentMethodEnum,
+    type: AccountPayableTypeEnum.default('ONE_TIME'),
+    recurrence: RecurrenceConfigSchema.optional(),
+  })
+  .refine((data) => data.dueDate >= startOfToday(), {
+    message: 'Vencimento não pode estar no passado',
+    path: ['dueDate'],
+  })
 
+// Sem refine de "vencimento no passado" aqui de propósito: reeditar uma conta
+// já OVERDUE reenvia o dueDate original (que é passado por definição) mesmo
+// sem o admin mexer nesse campo — bloquear isso impediria editar qualquer
+// outro dado de uma conta vencida. A regra é só pra cadastro (ver CreateAccountPayableSchema).
 export const UpdateAccountPayableSchema = z.object({
   description: z.string().min(1).optional(),
   category: SupplierCategoryEnum.optional(),
@@ -80,7 +93,7 @@ export const ListAccountsPayableQuerySchema = z.object({
 })
 
 export const ListReceivablesQuerySchema = z.object({
-  status: SubscriptionStatusEnum.optional(),
+  status: AccountPayableStatusEnum.optional(),
   paymentMethod: PaymentMethodEnum.optional(),
   planId: z.string().min(1).optional(),
   search: z.string().min(1).optional(),

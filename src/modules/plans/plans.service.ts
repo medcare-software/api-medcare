@@ -174,7 +174,15 @@ export const plansService = {
     if (!subscription) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Assinatura não encontrada' })
     }
-    const updated = await plansRepository.updateSubscription(id, omitUndefined(input))
+    const updated = await plansRepository.updateSubscription(
+      id,
+      omitUndefined({
+        ...input,
+        ...(input.billingAddress !== undefined && {
+          billingAddress: input.billingAddress as Prisma.InputJsonValue,
+        }),
+      }),
+    )
     await recordAuditEvent({
       actorId: user.id,
       action: 'UPDATE_SUBSCRIPTION',

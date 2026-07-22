@@ -285,11 +285,8 @@ export const reportsService = {
     ])
 
     const averageTicketCents =
-      receivableSummary.activeCount + receivableSummary.lateCount > 0
-        ? Math.round(
-            receivableSummary.totalMonthlyCents /
-              (receivableSummary.activeCount + receivableSummary.lateCount),
-          )
+      receivableSummary.totalCount > 0
+        ? Math.round(receivableSummary.totalMonthlyCents / receivableSummary.totalCount)
         : 0
 
     const sortedByDate = [...clients].sort(
@@ -312,9 +309,9 @@ export const reportsService = {
       receivableBreakdown: {
         totalCents: receivableSummary.totalMonthlyCents,
         byStatus: [
-          { status: 'ACTIVE', count: receivableSummary.activeCount },
-          { status: 'LATE', count: receivableSummary.lateCount },
-          { status: 'CANCELLED', count: receivableSummary.cancelledCount },
+          { status: 'RECEIVED', count: receivableSummary.receivedCount },
+          { status: 'PENDING', count: receivableSummary.pendingCount },
+          { status: 'OVERDUE', count: receivableSummary.overdueCount },
         ],
       },
       payableBreakdown: {

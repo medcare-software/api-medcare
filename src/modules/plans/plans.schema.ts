@@ -64,8 +64,10 @@ export const CreateSubscriptionSchema = z
   })
 
 export const UpdateSubscriptionSchema = z.object({
+  planId: z.string().min(1).optional(),
   nextDueDate: z.coerce.date().optional(),
   paymentMethod: PaymentMethodEnum.optional(),
+  billingAddress: AddressSchema.optional(),
   status: SubscriptionStatusEnum.optional(),
 })
 

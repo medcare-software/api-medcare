@@ -3,7 +3,6 @@ import type {
   AccountPayableType,
   PaymentMethod,
   Prisma,
-  SubscriptionStatus,
   SupplierCategory,
   UserStatus,
 } from '@prisma/client'
@@ -74,10 +73,36 @@ type MarkPaidData = {
 }
 
 type ReceivablesListFilters = {
-  status?: SubscriptionStatus
+  status?: AccountPayableStatus
   paymentMethod?: PaymentMethod
   planId?: string
   search?: string
+}
+
+// Primeiro dia do mês corrente — todo cálculo de "Contas a receber" é escopado
+// ao ciclo de cobrança atual (ver comentário de summarizeReceivables).
+function currentReferenceMonth(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+}
+
+function receivablesWhere(filters: ReceivablesListFilters): Prisma.PaymentWhereInput {
+  return {
+    referenceMonth: currentReferenceMonth(),
+    ...(filters.status && { status: filters.status }),
+    ...(filters.paymentMethod && { paymentMethod: filters.paymentMethod }),
+    ...((filters.planId || filters.search) && {
+      subscription: {
+        ...(filters.planId && { planId: filters.planId }),
+        ...(filters.search && {
+          OR: [
+            { clinic: { tradeName: { contains: filters.search, mode: 'insensitive' } } },
+            { doctor: { user: { name: { contains: filters.search, mode: 'insensitive' } } } },
+          ],
+        }),
+      },
+    }),
+  }
 }
 
 export const financialRepository = {
@@ -210,46 +235,30 @@ export const financialRepository = {
     return db.accountPayable.delete({ where: { id } })
   },
 
-  // "Contas a receber" não é uma tabela própria — deriva de Subscription, já que
-  // não existe cobrança/fatura real no sistema (gestão manual, sem gateway de pagamento).
+  // "Contas a receber" deriva de Payment (cobrança individual por ciclo, ver
+  // schema.prisma), escopada ao mês de referência corrente — quem garante que
+  // o Payment do ciclo atual existe antes desta query é financialService
+  // (ensureCurrentMonthReceivables), não o repository.
   findManyReceivables(filters: ReceivablesListFilters, pagination: { skip: number; take: number }) {
-    return db.subscription.findMany({
-      where: {
-        ...(filters.status && { status: filters.status }),
-        ...(filters.paymentMethod && { paymentMethod: filters.paymentMethod }),
-        ...(filters.planId && { planId: filters.planId }),
-        ...(filters.search && {
-          OR: [
-            { clinic: { tradeName: { contains: filters.search, mode: 'insensitive' } } },
-            { doctor: { user: { name: { contains: filters.search, mode: 'insensitive' } } } },
-          ],
-        }),
-      },
+    return db.payment.findMany({
+      where: receivablesWhere(filters),
       include: {
-        plan: { select: { name: true, basePrice: true } },
-        clinic: { select: { tradeName: true, cnpjEncrypted: true } },
-        doctor: { select: { user: { select: { name: true, cpfEncrypted: true } } } },
+        subscription: {
+          include: {
+            plan: { select: { name: true } },
+            clinic: { select: { tradeName: true, cnpjEncrypted: true } },
+            doctor: { select: { user: { select: { name: true, cpfEncrypted: true } } } },
+          },
+        },
       },
-      orderBy: { nextDueDate: 'asc' },
+      orderBy: { dueDate: 'asc' },
       skip: pagination.skip,
       take: pagination.take,
     })
   },
 
   countReceivables(filters: ReceivablesListFilters) {
-    return db.subscription.count({
-      where: {
-        ...(filters.status && { status: filters.status }),
-        ...(filters.paymentMethod && { paymentMethod: filters.paymentMethod }),
-        ...(filters.planId && { planId: filters.planId }),
-        ...(filters.search && {
-          OR: [
-            { clinic: { tradeName: { contains: filters.search, mode: 'insensitive' } } },
-            { doctor: { user: { name: { contains: filters.search, mode: 'insensitive' } } } },
-          ],
-        }),
-      },
-    })
+    return db.payment.count({ where: receivablesWhere(filters) })
   },
 
   async summarizeAccountsPayable() {
@@ -288,49 +297,40 @@ export const financialRepository = {
     }
   },
 
-  // Mesmo padrão de sumActiveSubscriptionRevenue do dashboard — soma em memória
-  // porque o valor mensal vive em Plan.basePrice, não em Subscription.
-  // Sem gateway de fatura: ACTIVE = em dia/recebido, LATE = inadimplente,
-  // pendente = ACTIVE com nextDueDate >= hoje.
+  // Baseado nos Payment (cobrança por ciclo) do mês de referência corrente —
+  // financialService.getReceivablesSummary() garante que esses registros
+  // existem (ensureCurrentMonthReceivables) antes de chamar esta função.
+  // Recebido = PAID/PAID_LATE, Pendente = PENDING (vence este mês, não pago),
+  // Inadimplentes = OVERDUE (já passou do vencimento). Total = soma dos três.
   async summarizeReceivables() {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const rows = await db.payment.groupBy({
+      by: ['status'],
+      where: { referenceMonth: currentReferenceMonth() },
+      _sum: { amountCents: true },
+      _count: { _all: true },
+    })
 
-    const [active, late, cancelled, pending] = await Promise.all([
-      db.subscription.findMany({
-        where: { status: 'ACTIVE' },
-        select: { plan: { select: { basePrice: true } }, nextDueDate: true },
-      }),
-      db.subscription.findMany({
-        where: { status: 'LATE' },
-        select: { plan: { select: { basePrice: true } } },
-      }),
-      db.subscription.count({ where: { status: 'CANCELLED' } }),
-      db.subscription.findMany({
-        where: { status: 'ACTIVE', nextDueDate: { gte: today } },
-        select: { plan: { select: { basePrice: true } } },
-      }),
-    ])
+    const byStatus = Object.fromEntries(rows.map((row) => [row.status, row])) as Partial<
+      Record<AccountPayableStatus, (typeof rows)[number]>
+    >
 
-    const toCents = (rows: { plan: { basePrice: unknown } }[]) =>
-      Math.round(rows.reduce((sum, row) => sum + Number(row.plan.basePrice), 0) * 100)
-
-    const receivedCents = toCents(active)
-    const overdueCents = toCents(late)
-    const pendingCents = toCents(pending)
+    const receivedCents =
+      (byStatus.PAID?._sum.amountCents ?? 0) + (byStatus.PAID_LATE?._sum.amountCents ?? 0)
+    const receivedCount = (byStatus.PAID?._count._all ?? 0) + (byStatus.PAID_LATE?._count._all ?? 0)
+    const pendingCents = byStatus.PENDING?._sum.amountCents ?? 0
+    const pendingCount = byStatus.PENDING?._count._all ?? 0
+    const overdueCents = byStatus.OVERDUE?._sum.amountCents ?? 0
+    const overdueCount = byStatus.OVERDUE?._count._all ?? 0
 
     return {
-      activeCount: active.length,
-      lateCount: late.length,
-      cancelledCount: cancelled,
-      totalMonthlyCents: receivedCents + overdueCents,
+      totalMonthlyCents: receivedCents + pendingCents + overdueCents,
+      totalCount: receivedCount + pendingCount + overdueCount,
       receivedCents,
-      receivedCount: active.length,
+      receivedCount,
       pendingCents,
-      pendingCount: pending.length,
+      pendingCount,
       overdueCents,
-      overdueCount: late.length,
-      totalCount: active.length + late.length,
+      overdueCount,
     }
   },
 
