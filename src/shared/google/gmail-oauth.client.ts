@@ -149,6 +149,192 @@ export async function getUserInfo(accessToken: string): Promise<{ email: string 
   return { email: data.email }
 }
 
+export async function refreshAccessToken(
+  refreshToken: string,
+): Promise<{ accessToken: string; expiresInSeconds: number }> {
+  const { clientId, clientSecret } = assertConfigured()
+
+  let response: Response
+  try {
+    response = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    })
+  } catch (err) {
+    console.error(
+      `[gmail-oauth] Falha de rede ao renovar access token: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    throw new AppError({
+      code: 'GMAIL_OAUTH_EXCHANGE_FAILED',
+      message: 'Não foi possível renovar a conexão com o Gmail.',
+    })
+  }
+
+  if (!response.ok) {
+    const body = await response.text()
+    console.error(`[gmail-oauth] Refresh de token falhou (${response.status}): ${body}`)
+    throw new AppError({
+      code: 'GMAIL_OAUTH_EXCHANGE_FAILED',
+      message: 'Não foi possível renovar a conexão com o Gmail.',
+    })
+  }
+
+  const data = (await response.json()) as { access_token: string; expires_in: number }
+  return { accessToken: data.access_token, expiresInSeconds: data.expires_in }
+}
+
+const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me'
+
+async function gmailFetch(accessToken: string, path: string): Promise<unknown> {
+  let response: Response
+  try {
+    response = await fetch(`${GMAIL_API_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  } catch (err) {
+    console.error(
+      `[gmail-oauth] Falha de rede ao chamar a Gmail API (${path}): ${err instanceof Error ? err.message : String(err)}`,
+    )
+    throw new AppError({
+      code: 'GMAIL_API_ERROR',
+      message: 'Não foi possível acessar o Gmail agora.',
+    })
+  }
+
+  if (!response.ok) {
+    const body = await response.text()
+    console.error(`[gmail-oauth] Gmail API falhou (${response.status}) em ${path}: ${body}`)
+    throw new AppError({
+      code: 'GMAIL_API_ERROR',
+      message: 'Não foi possível acessar o Gmail agora.',
+    })
+  }
+
+  return response.json()
+}
+
+// Busca só ids de mensagens — cada resultado é lido individualmente depois via
+// getMessage(). `query` já vem pronta com o allow-list de remetentes (ver
+// gmail-import.service.ts), nunca uma busca livre na caixa toda.
+export async function searchMessages(
+  accessToken: string,
+  query: string,
+  maxPages = 5,
+): Promise<string[]> {
+  const ids: string[] = []
+  let pageToken: string | undefined
+  let page = 0
+
+  do {
+    const params = new URLSearchParams({ q: query, maxResults: '50' })
+    if (pageToken) params.set('pageToken', pageToken)
+    const data = (await gmailFetch(accessToken, `/messages?${params.toString()}`)) as {
+      messages?: { id: string }[]
+      nextPageToken?: string
+    }
+    ids.push(...(data.messages ?? []).map((m) => m.id))
+    pageToken = data.nextPageToken
+    page += 1
+  } while (pageToken && page < maxPages)
+
+  return ids
+}
+
+type GmailMessagePart = {
+  mimeType?: string
+  filename?: string
+  body?: { data?: string; attachmentId?: string; size?: number }
+  parts?: GmailMessagePart[]
+}
+
+export type GmailMessage = {
+  id: string
+  internalDate: string
+  from: string
+  subject: string
+  bodyText: string
+  attachment: { filename: string; mimeType: string; attachmentId: string } | null
+}
+
+function findHeader(headers: { name: string; value: string }[], name: string): string {
+  return headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? ''
+}
+
+function decodeBase64Url(data: string): string {
+  return Buffer.from(data, 'base64url').toString('utf-8')
+}
+
+const ATTACHMENT_FILENAME_PATTERN = /\.(pdf|png|jpe?g)$/i
+
+// Percorre a árvore de partes MIME procurando o primeiro texto simples (corpo)
+// e o primeiro anexo com extensão relevante (laudo em PDF/imagem) — ignora o
+// resto (ex.: parte HTML duplicada, assinatura, tracking pixel).
+function extractBodyAndAttachment(part: GmailMessagePart): {
+  bodyText: string
+  attachment: GmailMessage['attachment']
+} {
+  let bodyText = ''
+  let attachment: GmailMessage['attachment'] = null
+
+  function walk(p: GmailMessagePart) {
+    if (p.filename && p.body?.attachmentId) {
+      if (!attachment && ATTACHMENT_FILENAME_PATTERN.test(p.filename)) {
+        attachment = {
+          filename: p.filename,
+          mimeType: p.mimeType ?? 'application/octet-stream',
+          attachmentId: p.body.attachmentId,
+        }
+      }
+      return
+    }
+    if (p.mimeType === 'text/plain' && p.body?.data && !bodyText) {
+      bodyText = decodeBase64Url(p.body.data)
+      return
+    }
+    for (const child of p.parts ?? []) walk(child)
+  }
+
+  walk(part)
+  return { bodyText, attachment }
+}
+
+export async function getMessage(accessToken: string, messageId: string): Promise<GmailMessage> {
+  const data = (await gmailFetch(accessToken, `/messages/${messageId}?format=full`)) as {
+    id: string
+    internalDate: string
+    payload: GmailMessagePart & { headers: { name: string; value: string }[] }
+  }
+  const headers = data.payload.headers ?? []
+  const { bodyText, attachment } = extractBodyAndAttachment(data.payload)
+
+  return {
+    id: data.id,
+    internalDate: data.internalDate,
+    from: findHeader(headers, 'From'),
+    subject: findHeader(headers, 'Subject'),
+    bodyText,
+    attachment,
+  }
+}
+
+export async function getAttachment(
+  accessToken: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<Buffer> {
+  const data = (await gmailFetch(
+    accessToken,
+    `/messages/${messageId}/attachments/${attachmentId}`,
+  )) as { data: string }
+  return Buffer.from(data.data, 'base64url')
+}
+
 export async function revokeToken(token: string): Promise<void> {
   try {
     await fetch(`${REVOKE_URL}?${new URLSearchParams({ token }).toString()}`, { method: 'POST' })

@@ -45,6 +45,17 @@ export async function resolveFamilyAdminUserIds(familyId: string): Promise<strin
   return admins.map((a) => a.userId).filter((id): id is string => id !== null)
 }
 
+// Cuidador é vinculado à família inteira (CaregiverAccess), não a um membro
+// específico — diferente de FamilyMember.isAdmin. Nenhuma notificação do
+// sistema alcançava cuidadores antes deste resolver.
+export async function resolveFamilyCaregiverUserIds(familyId: string): Promise<string[]> {
+  const accesses = await db.caregiverAccess.findMany({
+    where: { familyId, status: 'ACTIVE' },
+    select: { caregiverId: true },
+  })
+  return accesses.map((a) => a.caregiverId)
+}
+
 export async function resolveFamilyIdForMember(memberId: string): Promise<string | null> {
   const member = await db.familyMember.findUnique({
     where: { id: memberId },

@@ -8,6 +8,7 @@ import cron from 'node-cron'
 import { buildApp } from './app.js'
 import { env } from './config/env.js'
 import { checkExpiringAccessJob } from './shared/jobs/expiring-access.job.js'
+import { gmailImportJob } from './shared/jobs/gmail-import.job.js'
 import { storeAnalyticsSyncJob } from './shared/jobs/store-analytics-sync.job.js'
 
 const start = async () => {
@@ -30,6 +31,17 @@ const start = async () => {
     cron.schedule('0 9 * * *', () => {
       void storeAnalyticsSyncJob().catch((err) => {
         app.log.error(err, '[cron] falha ao sincronizar downloads das lojas')
+      })
+    })
+
+    // A cada 1 minuto — cadência de DESENVOLVIMENTO/TESTES (ver gmail-import.job.ts).
+    // ⚠️ Antes de produção, trocar para algo como '*/15 * * * *' (15 min): rodar a
+    // cada 1 min em produção gera carga desnecessária na API do Gmail sem ganho
+    // real, já que a salvaguarda de LGPD é o allow-list de LabEmail, não a
+    // velocidade do polling.
+    cron.schedule('* * * * *', () => {
+      void gmailImportJob().catch((err) => {
+        app.log.error(err, '[cron] falha ao importar laudos do Gmail')
       })
     })
   } catch (err) {

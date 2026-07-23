@@ -28,6 +28,10 @@ export interface PrescriptionContextForMedication {
   diagnosticId: string | null
   issueDate: Date
   validity: PrescriptionValidity
+  // Preenchido quando o médico confirmou o aviso de risco (ver
+  // prescriptions.service.ts#create) — propagado igual pra todas as Medication
+  // criadas a partir deste receituário.
+  riskAcknowledgedAt?: Date | null
 }
 
 export function buildMedicationFromPrescriptionItem(
@@ -54,5 +58,6 @@ export function buildMedicationFromPrescriptionItem(
     startDate: item.startDate ?? prescription.issueDate,
     endDate: item.endDate,
     active: true,
+    riskAcknowledgedAt: prescription.riskAcknowledgedAt ?? null,
   }
 }

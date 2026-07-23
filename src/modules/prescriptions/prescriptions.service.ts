@@ -4,20 +4,29 @@ import {
   assertClinicalWriteAccess,
   resolveDoctorId,
 } from '../../shared/access/index.js'
+import { checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
+import { getMedicationRiskContext } from '../../shared/ai/medication-risk.helpers.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
+  notifyMedicationRiskAcknowledged,
   resolveFamilyAdminUserIds,
   resolveFamilyIdForMember,
   sendPushToUser,
 } from '../../shared/push/index.js'
-import { decryptField, encryptField } from '../../shared/security/index.js'
+import { decryptField, encryptField, recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { prescriptionsRepository } from './prescriptions.repository.js'
 import type {
+  CheckPrescriptionRiskInput,
   CreatePrescriptionInput,
   PrescriptionItemInput,
   UpdatePrescriptionInput,
 } from './prescriptions.schema.js'
+
+// Mesmo texto fixo usado em medication-risk-check.service.ts — fonte única do
+// disclaimer mostrado no modal de risco (mobile e web).
+const DISCLAIMER =
+  'Recomendados consultar o médico responsável antes de administrar os medicamentos juntos.'
 
 function toItemData(item: PrescriptionItemInput) {
   return {
@@ -65,7 +74,7 @@ export const prescriptionsService = {
     await assertClinicalWriteAccess(user, input.memberId)
     // doctorId nunca vem do client — deriva sempre do token, para impedir spoofing.
     const doctorId = await resolveDoctorId(user.id)
-    const prescription = await prescriptionsRepository.create({
+    const { prescription, medications } = await prescriptionsRepository.create({
       memberId: input.memberId,
       doctorId,
       issueDate: input.issueDate,
@@ -75,6 +84,9 @@ export const prescriptionsService = {
       }),
       ...(input.generalInstructions !== undefined && {
         generalInstructionsEncrypted: encryptField(input.generalInstructions),
+      }),
+      ...(input.riskAcknowledgedAt !== undefined && {
+        riskAcknowledgedAt: input.riskAcknowledgedAt,
       }),
       items: input.items.map(toItemData),
     })
@@ -93,7 +105,48 @@ export const prescriptionsService = {
       })
     }
 
+    // Avisa admin(s) + cuidador(es) + o próprio paciente (se tiver login) — o
+    // médico (ator) fica de fora, já viu e confirmou o aviso no modal de risco.
+    if (input.riskAcknowledgedAt) {
+      for (const medication of medications) {
+        await notifyMedicationRiskAcknowledged({ medication, actorUserId: user.id })
+      }
+    }
+
     return toResponse(prescription)
+  },
+
+  // POST /prescriptions/check-risk — chamado pelo web ANTES do submit final do
+  // receituário, cobrindo interação tanto contra medicações já ativas do
+  // paciente quanto entre os próprios itens do receituário sendo criado.
+  async checkRisk(user: AuthUser, input: CheckPrescriptionRiskInput) {
+    await assertClinicalWriteAccess(user, input.memberId)
+
+    const context = await getMedicationRiskContext(input.memberId)
+    const result = await checkMedicationRisk({
+      newDrugs: input.items,
+      activeMedications: context.activeMedications,
+      allergies: context.allergies,
+    })
+
+    await recordAuditEvent({
+      actorId: user.id,
+      action: result.degraded ? 'MEDICATION_RISK_CHECK_DEGRADED' : 'MEDICATION_RISK_CHECK',
+      targetType: 'FamilyMember',
+      targetId: input.memberId,
+      metadata: {
+        drugNames: input.items.map((item) => item.name),
+        hasRisk: result.hasRisk,
+        riskCount: result.risks.length,
+      },
+    })
+
+    return {
+      hasRisk: result.hasRisk,
+      risks: result.risks,
+      disclaimer: DISCLAIMER,
+      degraded: result.degraded,
+    }
   },
 
   async update(user: AuthUser, id: string, input: UpdatePrescriptionInput) {

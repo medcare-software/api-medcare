@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import {
+  CheckPrescriptionRiskSchema,
   CreatePrescriptionSchema,
   ListPrescriptionsQuerySchema,
   UpdatePrescriptionSchema,
@@ -45,6 +46,25 @@ export default async function prescriptionsRoutes(fastify: FastifyInstance) {
       }
       const prescription = await prescriptionsService.create(req.user, body.data)
       return reply.status(201).send({ data: prescription })
+    },
+  )
+
+  // POST /prescriptions/check-risk — chamado pelo web ANTES do submit final,
+  // mostra aviso de interação/alergia e pede confirmação do médico antes de criar.
+  fastify.post(
+    '/prescriptions/check-risk',
+    { preHandler: [authenticate, authorize('DOCTOR')] },
+    async (req, reply) => {
+      const body = CheckPrescriptionRiskSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      const result = await prescriptionsService.checkRisk(req.user, body.data)
+      return reply.status(200).send({ data: result })
     },
   )
 

@@ -26,6 +26,7 @@ interface CreatePrescriptionData {
   linkedDiagnosticId?: string
   generalInstructionsEncrypted?: Buffer<ArrayBuffer>
   items: PrescriptionItemData[]
+  riskAcknowledgedAt?: Date
 }
 
 interface UpdatePrescriptionData {
@@ -61,26 +62,29 @@ export const prescriptionsRepository = {
   // receituário inteiro deve reverter, senão sobram itens "fantasmas" que nunca
   // viraram medicação real (ver medications/medications.internal.ts).
   create(data: CreatePrescriptionData) {
-    const { items, ...rest } = data
+    const { items, riskAcknowledgedAt, ...rest } = data
     return db.$transaction(async (tx) => {
       const prescription = await tx.prescription.create({
         data: { ...rest, items: { create: items } },
         include: { doctor: DOCTOR_SELECT, items: true },
       })
 
+      const medications = []
       for (const item of prescription.items) {
-        await tx.medication.create({
+        const medication = await tx.medication.create({
           data: buildMedicationFromPrescriptionItem(item, {
             memberId: prescription.memberId,
             doctorId: data.doctorId,
             diagnosticId: prescription.linkedDiagnosticId,
             issueDate: prescription.issueDate,
             validity: prescription.validity,
+            ...(riskAcknowledgedAt !== undefined && { riskAcknowledgedAt }),
           }),
         })
+        medications.push(medication)
       }
 
-      return prescription
+      return { prescription, medications }
     })
   },
 

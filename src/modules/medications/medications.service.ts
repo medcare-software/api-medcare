@@ -8,6 +8,7 @@ import {
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
+  notifyMedicationRiskAcknowledged,
   resolveFamilyAdminUserIds,
   resolveFamilyIdForMember,
   sendPushToUser,
@@ -48,7 +49,11 @@ export const medicationsService = {
 
     const { memberId, ...data } = input
     try {
-      return await medicationsRepository.create(memberId, data, idempotencyKey)
+      const medication = await medicationsRepository.create(memberId, data, idempotencyKey)
+      if (medication.riskAcknowledgedAt) {
+        await notifyMedicationRiskAcknowledged({ medication, actorUserId: user.id })
+      }
+      return medication
     } catch (err) {
       // Corrida: dois POSTs com a mesma key — o 2º perde no @unique e devolve o 1º.
       if (

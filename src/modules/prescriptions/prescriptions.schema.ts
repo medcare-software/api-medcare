@@ -43,6 +43,22 @@ export const CreatePrescriptionSchema = z.object({
   linkedDiagnosticId: z.string().min(1).optional(),
   generalInstructions: z.string().optional(),
   items: z.array(PrescriptionItemSchema).min(1, { message: 'Adicione ao menos um medicamento' }),
+  // Preenchido pelo web quando o médico confirma "Entendi, salvar mesmo assim"
+  // no modal de risco (ver POST /prescriptions/check-risk) — propagado pra cada
+  // Medication criada a partir deste receituário.
+  riskAcknowledgedAt: z.coerce.date().optional(),
+})
+
+export const CheckPrescriptionRiskSchema = z.object({
+  memberId: z.string().min(1, { message: 'Selecione um membro da família' }),
+  items: z
+    .array(
+      z.object({
+        name: z.string().min(1, { message: 'Nome do medicamento é obrigatório' }),
+        dosage: z.string().min(1, { message: 'Dosagem é obrigatória' }),
+      }),
+    )
+    .min(1, { message: 'Adicione ao menos um medicamento' }),
 })
 
 export const UpdatePrescriptionSchema = z.object({
@@ -66,3 +82,4 @@ export const ListPrescriptionsQuerySchema = z.object({
 export type CreatePrescriptionInput = z.infer<typeof CreatePrescriptionSchema>
 export type UpdatePrescriptionInput = z.infer<typeof UpdatePrescriptionSchema>
 export type PrescriptionItemInput = z.infer<typeof PrescriptionItemSchema>
+export type CheckPrescriptionRiskInput = z.infer<typeof CheckPrescriptionRiskSchema>

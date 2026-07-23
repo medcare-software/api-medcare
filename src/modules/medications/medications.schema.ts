@@ -42,6 +42,10 @@ const BaseMedicationSchema = z.object({
     .nonnegative({ message: 'Quantidade em estoque deve ser zero ou maior' })
     .optional(),
   prescriptionFileId: z.string().min(1, { message: 'Receita inválida' }).optional(),
+  // Preenchido pelo app quando o usuário confirma "Entendi, salvar mesmo assim"
+  // no modal de risco (ver medication-risk-check) — nunca vem sem uma checagem
+  // de risco ter sido mostrada antes.
+  riskAcknowledgedAt: z.coerce.date().optional(),
 })
 
 function endDateNotBeforeStartDate(data: {

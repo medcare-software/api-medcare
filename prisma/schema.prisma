@@ -305,6 +305,10 @@ model Medication {
   lowStockNotifiedAt       DateTime? // evita reenviar push de estoque baixo a cada dose registrada
   prescriptionFileId       String? // referência a objeto no storage (MinIO)
   deactivationReason       String?
+  // Preenchido quando o usuário confirma "Entendi, salvar mesmo assim" no aviso de
+  // risco (interação/alergia) da checagem por IA — prova durável do aviso ter sido
+  // mostrado e reconhecido, independente do AuditLog da checagem em si.
+  riskAcknowledgedAt       DateTime?
   /// Chave do cliente pra deduplicar create quando o app recebe NETWORK_ERROR
   /// após o POST já ter gravado (retry do usuário).
   idempotencyKey           String?               @unique
@@ -909,9 +913,7 @@ model AuditLog {
 }
 
 // ─────────────────────────────────────────────
-// Integração com Gmail (Fase 1: apenas connect/disconnect)
-// A varredura automática de e-mails/importação de laudos (ExamSource.GMAIL)
-// é uma entrega futura — importedCount fica em 0 até lá.
+// Integração com Gmail (varredura/importação de laudos via GmailImportedExam)
 // ─────────────────────────────────────────────
 
 enum GmailIntegrationStatus {
@@ -936,7 +938,36 @@ model GmailIntegration {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gmailImportedExams GmailImportedExam[]
 
   @@map("gmail_integrations")
+}
+
+enum GmailImportStatus {
+  PENDING // aguardando confirmação manual de qual membro é o dono do laudo
+  AUTO_LINKED // IA identificou o membro com confiança e já criou o Exam
+  IGNORED // IA concluiu que a mensagem não é um laudo (isLabResult=false)
+}
+
+// Um registro por mensagem Gmail já processada pelo job de importação — é o
+// mecanismo real de dedupe (o filtro after:/before: da busca no Gmail só tem
+// granularidade de dia, então é essa @@unique que impede reprocessamento).
+model GmailImportedExam {
+  id                 String            @id @default(cuid())
+  gmailIntegrationId String
+  gmailMessageId     String
+  suggestedMemberId  String?
+  fileId             String? // anexo extraído, guardado via o mesmo fluxo de upload (MinIO)
+  extractedSummary   Json // saída estruturada da IA (examType, examDateGuess, resultsSummary, ...)
+  status             GmailImportStatus @default(PENDING)
+  resolvedExamId     String?
+  createdAt          DateTime          @default(now())
+  resolvedAt         DateTime?
+
+  gmailIntegration GmailIntegration @relation(fields: [gmailIntegrationId], references: [id], onDelete: Cascade)
+
+  @@unique([gmailIntegrationId, gmailMessageId])
+  @@index([status])
+  @@map("gmail_imported_exams")
 }

@@ -10,6 +10,7 @@ import {
 } from '../../shared/google/gmail-oauth.client.js'
 import { decryptField, encryptField, maskEmail } from '../../shared/security/index.js'
 import type { AuthUser, GmailOAuthStatePayload } from '../../shared/types/auth.types.js'
+import { gmailImportRepository } from '../gmail-import/gmail-import.repository.js'
 import { gmailIntegrationRepository } from './gmail-integration.repository.js'
 import type { UpdateGmailSettingsInput } from './gmail-integration.schema.js'
 
@@ -77,6 +78,7 @@ export const gmailIntegrationService = {
     if (!integration || integration.status !== 'CONNECTED') {
       return { connected: false as const }
     }
+    const pendingReviewCount = await gmailImportRepository.countPendingByUserId(user.id)
     return {
       connected: true as const,
       googleEmailMasked: maskEmail(integration.googleEmail, 4),
@@ -84,6 +86,7 @@ export const gmailIntegrationService = {
       lastVerifiedAt: integration.lastVerifiedAt,
       importedCount: integration.importedCount,
       autoImportEnabled: integration.autoImportEnabled,
+      pendingReviewCount,
     }
   },
 
