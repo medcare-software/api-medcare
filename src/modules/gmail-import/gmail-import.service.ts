@@ -1,6 +1,7 @@
-import type { GmailIntegration, LabEmail } from '@prisma/client'
+import type { ExamType, GmailImportedExam, GmailIntegration, LabEmail } from '@prisma/client'
 
 import { extractExamFromEmail } from '../../shared/ai/gmail-exam.client.js'
+import { AppError } from '../../shared/errors/index.js'
 import {
   getAttachment,
   getMessage,
@@ -11,6 +12,36 @@ import { sendPushToUser } from '../../shared/push/index.js'
 import { decryptField, encryptField, recordSensitiveAccess } from '../../shared/security/index.js'
 import { filesRepository } from '../files/files.repository.js'
 import { gmailImportRepository } from './gmail-import.repository.js'
+
+// Formato salvo em GmailImportedExam.extractedSummary — mistura a saída bruta
+// da IA (ver GmailExamExtraction) com o subject do e-mail, guardado à parte
+// porque a mensagem original não fica persistida em lugar nenhum além disso.
+type StoredExtractedSummary = {
+  isLabResult: boolean
+  patientNameGuess?: string
+  examType?: ExamType
+  examDateGuess?: string
+  resultsSummary?: string
+  subject?: string
+}
+
+function resolvePendingName(summary: StoredExtractedSummary): string {
+  return summary.resultsSummary?.slice(0, 120) || summary.subject || 'Exame importado do Gmail'
+}
+
+function toPendingResponse(item: GmailImportedExam, ownerMemberId: string | null) {
+  const summary = (item.extractedSummary ?? {}) as StoredExtractedSummary
+  return {
+    id: item.id,
+    fileId: item.fileId,
+    ownerMemberId,
+    suggestedMemberId: item.suggestedMemberId,
+    name: resolvePendingName(summary),
+    examType: summary.examType ?? 'OUTROS',
+    examDate: summary.examDateGuess ?? item.createdAt.toISOString(),
+    createdAt: item.createdAt,
+  }
+}
 
 const TOKEN_REFRESH_MARGIN_MS = 2 * 60 * 1000
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
@@ -156,7 +187,7 @@ async function processIntegration(
         await gmailImportRepository.createImportedExam({
           gmailIntegrationId: integration.id,
           gmailMessageId: messageId,
-          extractedSummary: { ...extraction },
+          extractedSummary: { ...extraction, subject: message.subject },
           status: 'IGNORED',
         })
         continue
@@ -195,7 +226,7 @@ async function processIntegration(
           gmailMessageId: messageId,
           suggestedMemberId: matchedMemberId,
           ...(fileId && { fileId }),
-          extractedSummary: { ...extraction },
+          extractedSummary: { ...extraction, subject: message.subject },
           status: 'AUTO_LINKED',
           resolvedExamId: exam.id,
         })
@@ -206,17 +237,17 @@ async function processIntegration(
           data: { type: 'exam-shared', examId: exam.id, memberId: matchedMemberId },
         })
       } else {
-        await gmailImportRepository.createImportedExam({
+        const pending = await gmailImportRepository.createImportedExam({
           gmailIntegrationId: integration.id,
           gmailMessageId: messageId,
           ...(fileId && { fileId }),
-          extractedSummary: { ...extraction },
+          extractedSummary: { ...extraction, subject: message.subject },
           status: 'PENDING',
         })
         await sendPushToUser(integration.userId, {
           title: 'Laudo aguardando revisão',
           body: 'Recebemos um laudo por e-mail, mas precisamos que você confirme de quem é.',
-          data: { type: 'gmail-exam-needs-review' },
+          data: { type: 'gmail-exam-needs-review', gmailImportedExamId: pending.id },
         })
       }
     } catch (err) {
@@ -234,7 +265,9 @@ export const gmailImportService = {
     const startedAt = Date.now()
     const activeLabEmails = await gmailImportRepository.findActiveLabEmails()
     if (activeLabEmails.length === 0) {
-      console.info('[gmail-import] Rodada do cron: nenhum LabEmail ativo cadastrado — nada a fazer.')
+      console.info(
+        '[gmail-import] Rodada do cron: nenhum LabEmail ativo cadastrado — nada a fazer.',
+      )
       return
     }
 
@@ -253,5 +286,69 @@ export const gmailImportService = {
       }
     }
     console.info(`[gmail-import] Rodada do cron concluída em ${Date.now() - startedAt}ms.`)
+  },
+
+  async listPending(userId: string) {
+    const [items, ownerMember] = await Promise.all([
+      gmailImportRepository.findPendingByUserId(userId),
+      gmailImportRepository.findOwnFamilyMember(userId),
+    ])
+    return items.map((item) => toPendingResponse(item, ownerMember?.id ?? null))
+  },
+
+  async getById(userId: string, id: string) {
+    const [item, ownerMember] = await Promise.all([
+      gmailImportRepository.findByIdScoped(id, userId),
+      gmailImportRepository.findOwnFamilyMember(userId),
+    ])
+    if (!item) throw new AppError({ code: 'NOT_FOUND', message: 'Laudo não encontrado' })
+    return toPendingResponse(item, ownerMember?.id ?? null)
+  },
+
+  // Cria o Exam de verdade só aqui, quando o usuário confirma de qual membro é
+  // — nunca antes disso (ver processIntegration: caminho PENDING não cria Exam).
+  async confirm(userId: string, id: string, memberId: string) {
+    const item = await gmailImportRepository.findByIdScoped(id, userId)
+    if (!item) throw new AppError({ code: 'NOT_FOUND', message: 'Laudo não encontrado' })
+    if (item.status !== 'PENDING') {
+      throw new AppError({ code: 'CONFLICT', message: 'Este laudo já foi revisado' })
+    }
+
+    const familyMembers = await gmailImportRepository.findFamilyMembersByUserId(userId)
+    if (!familyMembers.some((m) => m.id === memberId)) {
+      throw new AppError({ code: 'FORBIDDEN', message: 'Membro não pertence à sua família' })
+    }
+
+    const summary = (item.extractedSummary ?? {}) as StoredExtractedSummary
+    const exam = await gmailImportRepository.createExam({
+      memberId,
+      name: resolvePendingName(summary),
+      examType: summary.examType ?? 'OUTROS',
+      examDate: summary.examDateGuess ? new Date(summary.examDateGuess) : item.createdAt,
+      ...(item.fileId && { fileId: item.fileId }),
+    })
+
+    await gmailImportRepository.markConfirmed(item.id, exam.id)
+    await gmailImportRepository.incrementImportedCount(userId)
+    await sendPushToUser(userId, {
+      title: 'Novo laudo importado do Gmail',
+      body: `"${exam.name}" foi importado.`,
+      data: { type: 'exam-shared', examId: exam.id, memberId },
+    })
+
+    return exam
+  },
+
+  async reject(userId: string, id: string) {
+    const item = await gmailImportRepository.findByIdScoped(id, userId)
+    if (!item) throw new AppError({ code: 'NOT_FOUND', message: 'Laudo não encontrado' })
+    if (item.status !== 'PENDING') {
+      throw new AppError({ code: 'CONFLICT', message: 'Este laudo já foi revisado' })
+    }
+
+    if (item.fileId) {
+      await filesRepository.deleteObject(item.fileId)
+    }
+    await gmailImportRepository.markRejected(item.id)
   },
 }

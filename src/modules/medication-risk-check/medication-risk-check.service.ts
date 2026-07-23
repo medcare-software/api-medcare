@@ -1,6 +1,8 @@
 import { assertOwnScopedMemberInScope } from '../../shared/access/index.js'
-import { type MedicationRisk, checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
+import { checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
 import { getMedicationRiskContext } from '../../shared/ai/medication-risk.helpers.js'
+import { type ComposedRisk, composeRisk } from '../../shared/drug-interactions/compose-risk.js'
+import { checkImsesInteractions } from '../../shared/drug-interactions/imses.client.js'
 import { recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import type { CheckMedicationRiskInput } from './medication-risk-check.schema.js'
@@ -13,7 +15,7 @@ const DISCLAIMER =
 
 export interface MedicationRiskCheckResponse {
   hasRisk: boolean
-  risks: MedicationRisk[]
+  risks: ComposedRisk[]
   disclaimer: string
   degraded: boolean
 }
@@ -26,11 +28,15 @@ export const medicationRiskCheckService = {
     await assertOwnScopedMemberInScope(user, input.memberId)
 
     const context = await getMedicationRiskContext(input.memberId)
-    const result = await checkMedicationRisk({
-      newDrugs: [{ name: input.name, dosage: `${input.dosage}${input.dosageUnit}` }],
-      activeMedications: context.activeMedications,
-      allergies: context.allergies,
-    })
+    const [aiResult, imsesResult] = await Promise.all([
+      checkMedicationRisk({
+        newDrugs: [{ name: input.name, dosage: `${input.dosage}${input.dosageUnit}` }],
+        activeMedications: context.activeMedications,
+        allergies: context.allergies,
+      }),
+      checkImsesInteractions([input.name, ...context.activeMedications.map((m) => m.name)]),
+    ])
+    const result = composeRisk(aiResult, imsesResult)
 
     // Toda checagem fica registrada — inclusive quando degradada, pra dar
     // visibilidade operacional de que a IA não rodou (ver Decisões de

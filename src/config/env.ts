@@ -139,6 +139,13 @@ const envSchema = z.object({
   // identificar o app nos relatórios de vendas.
   APP_STORE_CONNECT_APP_ID: z.string().default('6786394968'),
 
+  // ── Integração IMSES / CRF-MG (base de interações medicamentosas) ───────────
+  // Opcional de propósito, como Anthropic/Gmail/App Store Connect: sem a chave
+  // em dev/local, a checagem de interação cai para só a IA (fail-open) — ver
+  // src/shared/drug-interactions/imses.client.ts.
+  IMSES_API_KEY: z.string().optional(),
+  IMSES_API_BASE_URL: z.string().url().default('https://imses.crfmg.org.br/api'),
+
   // ── Integração Google Play (relatório de downloads — Fase 7.2) ──────────────
   // JSON completo da service account (Play Developer Reporting API), como
   // string de uma linha — nunca commitar o valor real.

@@ -77,4 +77,38 @@ export const gmailImportRepository = {
       where: { status: 'PENDING', gmailIntegration: { userId } },
     })
   },
+
+  findPendingByUserId(userId: string) {
+    return db.gmailImportedExam.findMany({
+      where: { status: 'PENDING', gmailIntegration: { userId } },
+      orderBy: { createdAt: 'asc' },
+    })
+  },
+
+  findByIdScoped(id: string, userId: string) {
+    return db.gmailImportedExam.findFirst({
+      where: { id, gmailIntegration: { userId } },
+    })
+  },
+
+  // O "dono do e-mail" — mesmo membro citado no comentário de
+  // findFamilyMembersByUserId acima, usado como valor padrão do seletor de
+  // membro na tela de revisão.
+  findOwnFamilyMember(userId: string) {
+    return db.familyMember.findFirst({ where: { userId } })
+  },
+
+  markConfirmed(id: string, examId: string) {
+    return db.gmailImportedExam.update({
+      where: { id },
+      data: { status: 'AUTO_LINKED', resolvedExamId: examId, resolvedAt: new Date() },
+    })
+  },
+
+  markRejected(id: string) {
+    return db.gmailImportedExam.update({
+      where: { id },
+      data: { status: 'REJECTED', resolvedAt: new Date(), fileId: null },
+    })
+  },
 }

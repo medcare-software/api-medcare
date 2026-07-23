@@ -948,6 +948,7 @@ enum GmailImportStatus {
   PENDING // aguardando confirmação manual de qual membro é o dono do laudo
   AUTO_LINKED // IA identificou o membro com confiança e já criou o Exam
   IGNORED // IA concluiu que a mensagem não é um laudo (isLabResult=false)
+  REJECTED // usuário revisou manualmente e recusou — arquivo removido do storage, linha mantida por auditoria
 }
 
 // Um registro por mensagem Gmail já processada pelo job de importação — é o

@@ -6,6 +6,8 @@ import {
 } from '../../shared/access/index.js'
 import { checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
 import { getMedicationRiskContext } from '../../shared/ai/medication-risk.helpers.js'
+import { composeRisk } from '../../shared/drug-interactions/compose-risk.js'
+import { checkImsesInteractions } from '../../shared/drug-interactions/imses.client.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
   notifyMedicationRiskAcknowledged,
@@ -123,11 +125,18 @@ export const prescriptionsService = {
     await assertClinicalWriteAccess(user, input.memberId)
 
     const context = await getMedicationRiskContext(input.memberId)
-    const result = await checkMedicationRisk({
-      newDrugs: input.items,
-      activeMedications: context.activeMedications,
-      allergies: context.allergies,
-    })
+    const [aiResult, imsesResult] = await Promise.all([
+      checkMedicationRisk({
+        newDrugs: input.items,
+        activeMedications: context.activeMedications,
+        allergies: context.allergies,
+      }),
+      checkImsesInteractions([
+        ...input.items.map((item) => item.name),
+        ...context.activeMedications.map((m) => m.name),
+      ]),
+    ])
+    const result = composeRisk(aiResult, imsesResult)
 
     await recordAuditEvent({
       actorId: user.id,
