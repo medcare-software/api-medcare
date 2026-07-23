@@ -232,7 +232,12 @@ export async function searchMessages(
   let page = 0
 
   do {
-    const params = new URLSearchParams({ q: query, maxResults: '50' })
+    // includeSpamTrash: por padrão a API do Gmail exclui Spam/Lixeira das
+    // buscas mesmo quando o filtro from: bate — como o allow-list de
+    // LabEmail já é a nossa garantia de confiança no remetente, um e-mail
+    // confiável cair no Spam do Gmail (comum em primeiro contato) não deve
+    // impedir a leitura.
+    const params = new URLSearchParams({ q: query, maxResults: '50', includeSpamTrash: 'true' })
     if (pageToken) params.set('pageToken', pageToken)
     const data = (await gmailFetch(accessToken, `/messages?${params.toString()}`)) as {
       messages?: { id: string }[]
