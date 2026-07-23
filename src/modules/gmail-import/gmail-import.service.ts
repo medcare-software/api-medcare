@@ -106,7 +106,10 @@ async function processIntegration(
     try {
       const message = await getMessage(accessToken, messageId)
       const internalDate = new Date(Number(message.internalDate))
-      if (internalDate <= integration.lastVerifiedAt) continue
+      // Dedupe já é garantido por GmailImportedExam.gmailMessageId (@@unique)
+      // — não filtrar por data aqui de novo, senão uma mensagem anterior ao
+      // connectedAt (ou do mesmo dia da conexão) fica presa num loop de
+      // "descoberta → pulada" pra sempre, sem nunca virar um registro.
       if (internalDate > latestProcessedAt) latestProcessedAt = internalDate
 
       // Toda leitura de mensagem de terceiro fica auditada — é o mecanismo que
