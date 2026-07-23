@@ -110,17 +110,19 @@ export const authService = {
     })
   },
 
-  // Limite de 2 sessões simultâneas só pra login de médico (ver plano de
-  // "Sessões ativas" — clínica/família não são afetados por essa regra).
-  async assertSessionCapacity(userId: string, role: Role) {
+  // Limite de 2 sessões simultâneas só pra login de médico (clínica/família não
+  // são afetados). Em vez de bloquear o login, libera espaço revogando a sessão
+  // mais antiga — sessões ficam "presas" ativas no servidor sempre que o médico
+  // fecha a aba/navegador sem clicar em "Sair" (o browser não tem como avisar o
+  // backend nesse caso), então bloquear pra sempre exigiria intervenção manual
+  // toda vez que isso acontecesse.
+  async enforceSessionCapacity(userId: string, role: Role) {
     if (role !== 'DOCTOR') return
     const activeCount = await authRepository.countActiveRefreshTokens(userId)
-    if (activeCount >= 2) {
-      throw new AppError({
-        code: 'SESSION_LIMIT_REACHED',
-        message:
-          'Limite de 2 sessões simultâneas atingido. Encerre uma sessão existente para continuar.',
-      })
+    if (activeCount < 2) return
+    const oldest = await authRepository.findOldestActiveRefreshToken(userId)
+    if (oldest) {
+      await authRepository.revokeRefreshToken(oldest.jti)
     }
   },
 

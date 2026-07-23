@@ -59,10 +59,19 @@ export const authRepository = {
     return db.refreshToken.findUnique({ where: { jti } })
   },
 
-  // Usado pelo limite de 2 sessões simultâneas (só médico, ver assertSessionCapacity).
+  // Usado pelo limite de 2 sessões simultâneas (só médico, ver enforceSessionCapacity).
   async countActiveRefreshTokens(userId: string) {
     return db.refreshToken.count({
       where: { userId, revoked: false, expiresAt: { gt: new Date() } },
+    })
+  },
+
+  // A sessão mais antiga ainda ativa — usada pra liberar espaço automaticamente
+  // quando o limite é atingido (ver enforceSessionCapacity).
+  async findOldestActiveRefreshToken(userId: string) {
+    return db.refreshToken.findFirst({
+      where: { userId, revoked: false, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'asc' },
     })
   },
 

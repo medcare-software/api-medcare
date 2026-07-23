@@ -36,7 +36,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           ? await authService.validateEmailLogin(body.data)
           : await authService.validateCrmLogin(body.data)
 
-    await authService.assertSessionCapacity(user.id, user.role)
+    await authService.enforceSessionCapacity(user.id, user.role)
     await authService.recordLogin(user.id)
 
     const deviceLabel = getDeviceLabel(req.headers['user-agent'])
