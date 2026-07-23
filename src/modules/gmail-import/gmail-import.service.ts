@@ -72,12 +72,20 @@ async function processIntegration(
   activeLabEmails: LabEmail[],
 ): Promise<void> {
   const accessToken = await ensureFreshAccessToken(integration)
-  if (!accessToken) return
+  if (!accessToken) {
+    console.warn(
+      `[gmail-import] Integração ${integration.id} sem token válido (desconectada ou refresh falhou) — pulando.`,
+    )
+    return
+  }
 
   const senderClause = activeLabEmails.map((lab) => lab.email).join(' OR ')
   const query = `from:(${senderClause}) after:${formatGmailDate(integration.lastVerifiedAt)}`
 
   const messageIds = await searchMessages(accessToken, query)
+  console.info(
+    `[gmail-import] Integração ${integration.id}: ${messageIds.length} mensagem(ns) encontrada(s) na busca (query="${query}").`,
+  )
   if (messageIds.length === 0) {
     await gmailImportRepository.touchLastVerifiedAt(integration.userId, new Date())
     return
@@ -88,6 +96,9 @@ async function processIntegration(
     messageIds,
   )
   const newMessageIds = messageIds.filter((id) => !alreadyImported.has(id))
+  console.info(
+    `[gmail-import] Integração ${integration.id}: ${newMessageIds.length} nova(s) de ${messageIds.length} (resto já importado/ignorado antes).`,
+  )
 
   let latestProcessedAt = integration.lastVerifiedAt
 
@@ -217,10 +228,18 @@ async function processIntegration(
 
 export const gmailImportService = {
   async run(): Promise<void> {
+    const startedAt = Date.now()
     const activeLabEmails = await gmailImportRepository.findActiveLabEmails()
-    if (activeLabEmails.length === 0) return
+    if (activeLabEmails.length === 0) {
+      console.info('[gmail-import] Rodada do cron: nenhum LabEmail ativo cadastrado — nada a fazer.')
+      return
+    }
 
     const integrations = await gmailImportRepository.findConnectedIntegrations()
+    console.info(
+      `[gmail-import] Rodada do cron: ${activeLabEmails.length} laboratório(s) ativo(s), ${integrations.length} conta(s) Gmail conectada(s) com auto-import.`,
+    )
+
     for (const integration of integrations) {
       try {
         await processIntegration(integration, activeLabEmails)
@@ -230,5 +249,6 @@ export const gmailImportService = {
         )
       }
     }
+    console.info(`[gmail-import] Rodada do cron concluída em ${Date.now() - startedAt}ms.`)
   },
 }
