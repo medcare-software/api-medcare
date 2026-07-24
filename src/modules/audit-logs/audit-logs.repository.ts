@@ -45,4 +45,11 @@ export const auditLogsRepository = {
   count(filters: AuditLogListFilters) {
     return db.auditLog.count({ where: buildWhere(filters) })
   },
+
+  findLatestByActorAndAction(actorId: string, action: string) {
+    return db.auditLog.findFirst({
+      where: { actorId, action },
+      orderBy: { createdAt: 'desc' },
+    })
+  },
 }

@@ -1,4 +1,4 @@
-import type { Prisma, UserStatus } from '@prisma/client'
+import type { ClinicInstitutionType, Prisma, UserStatus } from '@prisma/client'
 
 import { db } from '../../config/database.js'
 import { omitUndefined } from '../../shared/utils/index.js'
@@ -28,6 +28,7 @@ type CreateClinicWithAdminData = {
   email?: string
   phone: string
   address: Prisma.InputJsonValue
+  institutionType: ClinicInstitutionType
   planId?: string
   adminName: string
   adminEmail: string
@@ -43,6 +44,7 @@ type CreateClinicWithExistingAdminData = {
   email?: string
   phone: string
   address: Prisma.InputJsonValue
+  institutionType: ClinicInstitutionType
   planId?: string
   adminUserId: string
 }
@@ -127,6 +129,7 @@ export const clinicsRepository = {
           email: input.email,
           phone: input.phone,
           address: input.address,
+          institutionType: input.institutionType,
           planId: input.planId,
           status: 'ACTIVE',
         }),
@@ -165,6 +168,7 @@ export const clinicsRepository = {
           email: input.email,
           phone: input.phone,
           address: input.address,
+          institutionType: input.institutionType,
           planId: input.planId,
           status: 'ACTIVE',
         }),

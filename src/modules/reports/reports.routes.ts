@@ -3,7 +3,9 @@ import type { FastifyInstance } from 'fastify'
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import {
   ChurnReportQuerySchema,
+  GrowthReportQuerySchema,
   ListReportPageQuerySchema,
+  MedicationCitiesQuerySchema,
   MedicationsReportQuerySchema,
 } from './reports.schema.js'
 import { reportsService } from './reports.service.js'
@@ -41,14 +43,24 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({ data: await reportsService.getFinancial(query.data) })
   })
 
-  fastify.get('/admin/reports/growth', guard, async (_req, reply) => {
-    return reply.status(200).send({ data: await reportsService.getGrowth() })
+  fastify.get('/admin/reports/growth', guard, async (req, reply) => {
+    const query = GrowthReportQuerySchema.safeParse(req.query)
+    if (!query.success) return validationError(reply, query.error.issues)
+    return reply.status(200).send({ data: await reportsService.getGrowth(query.data.state) })
   })
 
   fastify.get('/admin/reports/medications', guard, async (req, reply) => {
     const query = MedicationsReportQuerySchema.safeParse(req.query)
     if (!query.success) return validationError(reply, query.error.issues)
     return reply.status(200).send({ data: await reportsService.getMedications(query.data) })
+  })
+
+  fastify.get('/admin/reports/medications/cities', guard, async (req, reply) => {
+    const query = MedicationCitiesQuerySchema.safeParse(req.query)
+    if (!query.success) return validationError(reply, query.error.issues)
+    return reply
+      .status(200)
+      .send({ data: await reportsService.getMedicationCities(query.data.state) })
   })
 
   fastify.get('/admin/reports/churn', guard, async (req, reply) => {

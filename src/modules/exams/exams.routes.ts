@@ -4,8 +4,14 @@ import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import { CreateExamSchema, ListExamsQuerySchema, UpdateExamSchema } from './exams.schema.js'
 import { examsService } from './exams.service.js'
 
-const EXAM_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER', 'DOCTOR'] as const
-const EXAM_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER', 'DOCTOR'] as const
+const EXAM_WRITERS = [
+  'PATIENT_ADMIN',
+  'FAMILY_MEMBER',
+  'CAREGIVER',
+  'DOCTOR',
+  'CLINIC_ADMIN',
+] as const
+const EXAM_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER', 'DOCTOR', 'CLINIC_ADMIN'] as const
 
 export default async function examsRoutes(fastify: FastifyInstance) {
   // GET /exams?memberId=

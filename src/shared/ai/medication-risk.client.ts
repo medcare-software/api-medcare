@@ -202,10 +202,17 @@ export async function checkMedicationRisk(input: {
   // Não confia só na instrução do prompt — descarta deterministicamente
   // qualquer risco cujo relatedNewDrug não bata com um dos medicamentos
   // novos informados, mesmo que a IA tenha ignorado a regra do prompt.
-  const newDrugNamesNormalized = new Set(input.newDrugs.map((d) => normalizeDrugName(d.name)))
-  const risks = parsed.data.risks.filter((risk) =>
-    newDrugNamesNormalized.has(normalizeDrugName(risk.relatedNewDrug)),
-  )
+  // Match por "contém" (não igualdade exata): o prompt mostra a IA o
+  // medicamento novo como "nome dosagem" (ver buildUserPrompt), então é comum
+  // ela ecoar relatedNewDrug com a dosagem junto (ex.: "Dipirona 500mg") — uma
+  // comparação exata contra só o nome descartaria erroneamente um risco real.
+  const newDrugNamesNormalized = [...new Set(input.newDrugs.map((d) => normalizeDrugName(d.name)))]
+  const risks = parsed.data.risks.filter((risk) => {
+    const normalizedRelated = normalizeDrugName(risk.relatedNewDrug)
+    return newDrugNamesNormalized.some(
+      (name) => normalizedRelated.includes(name) || name.includes(normalizedRelated),
+    )
+  })
   if (risks.length !== parsed.data.risks.length) {
     console.warn(
       `[medication-risk] Descartados ${parsed.data.risks.length - risks.length} risco(s) cujo relatedNewDrug não bate com nenhum medicamento novo.`,

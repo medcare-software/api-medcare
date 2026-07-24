@@ -5,12 +5,20 @@ import { doctorsRepository } from '../doctors/doctors.repository.js'
 import { financialRepository } from '../financial/financial.repository.js'
 import { plansRepository } from '../plans/plans.repository.js'
 import { storeAnalyticsService } from '../store-analytics/store-analytics.service.js'
+import { usersRepository } from '../users/users.repository.js'
+import type { AtRiskFilters } from './reports.repository.js'
 import { reportsRepository } from './reports.repository.js'
 import type {
   ChurnReportQuery,
   ListReportPageQuery,
   MedicationsReportQuery,
 } from './reports.schema.js'
+
+function percentDelta(current: number, previous: number): number | null {
+  return previous > 0 ? Math.round(((current - previous) / previous) * 100) : null
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
 
 type ClinicWithSub = Awaited<
   ReturnType<typeof reportsRepository.findClinicsWithSubscription>
@@ -33,8 +41,16 @@ function toClientRow(row: ClinicWithSub | DoctorWithSub) {
     id: row.id,
     name: isClinic ? (row as ClinicWithSub).tradeName : (row as DoctorWithSub).user.name,
     type: isClinic ? ('CLINIC' as const) : ('DOCTOR' as const),
+    planId: subscription?.plan.id ?? null,
     planName: subscription?.plan.name ?? null,
     monthlyValueCents,
+    // Só a parcela de médicos excedentes do valor cobrado — usada isoladamente
+    // pelo KPI "Receita de excedentes" do relatório de Planos.
+    extraFeeCents: subscription
+      ? Math.round(
+          subscription.extraDoctorsCount * Number(subscription.plan.extraMemberFee ?? 0) * 100,
+        )
+      : 0,
     status: subscription?.status ?? null,
     createdAt: row.createdAt,
   }
@@ -53,23 +69,107 @@ async function loadSubscribedClients() {
   return [...clinics.map(toClientRow), ...doctors.map(toClientRow)]
 }
 
+type ChurnEntityType = 'DOCTOR' | 'CLINIC' | 'USER'
+type ChurnUnifiedRow = {
+  id: string
+  type: ChurnEntityType
+  name: string
+  planName: string | null
+  createdAt: Date
+  lastLoginAt: Date | null
+}
+
+async function loadAtRiskRows(filters: AtRiskFilters) {
+  const [doctors, clinics, users] = await Promise.all([
+    reportsRepository.findDoctorsAtRisk(filters),
+    reportsRepository.findClinicsAtRisk(filters),
+    reportsRepository.findAppUsersAtRisk(filters),
+  ])
+  return {
+    doctors: doctors.map(
+      (doctor): ChurnUnifiedRow => ({
+        id: doctor.id,
+        type: 'DOCTOR',
+        name: doctor.user.name,
+        planName: doctor.plan?.name ?? null,
+        createdAt: doctor.user.createdAt,
+        lastLoginAt: doctor.user.lastLoginAt,
+      }),
+    ),
+    clinics: clinics.map(
+      (clinic): ChurnUnifiedRow => ({
+        id: clinic.id,
+        type: 'CLINIC',
+        name: clinic.tradeName,
+        planName: clinic.plan?.name ?? null,
+        createdAt: clinic.admins[0]?.user.createdAt ?? clinic.createdAt,
+        lastLoginAt: clinic.admins[0]?.user.lastLoginAt ?? null,
+      }),
+    ),
+    users: users.map(
+      (user): ChurnUnifiedRow => ({
+        id: user.id,
+        type: 'USER',
+        name: user.name,
+        planName: null,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt,
+      }),
+    ),
+  }
+}
+
+function sortChurnRows(
+  rows: ChurnUnifiedRow[],
+  sortBy: ChurnReportQuery['sortBy'],
+  sortDir: ChurnReportQuery['sortDir'],
+  now: Date,
+) {
+  const dir = sortDir === 'asc' ? 1 : -1
+  const inactiveDaysOf = (row: ChurnUnifiedRow) =>
+    Math.floor((now.getTime() - (row.lastLoginAt ?? row.createdAt).getTime()) / DAY_MS)
+
+  return [...rows].sort((a, b) => {
+    if (sortBy === 'name') return dir * a.name.localeCompare(b.name)
+    if (sortBy === 'lastLoginAt') {
+      return dir * ((a.lastLoginAt?.getTime() ?? 0) - (b.lastLoginAt?.getTime() ?? 0))
+    }
+    if (sortBy === 'inactiveDays') return dir * (inactiveDaysOf(a) - inactiveDaysOf(b))
+    return dir * (a.createdAt.getTime() - b.createdAt.getTime())
+  })
+}
+
 export const reportsService = {
   // ── 1. Clientes ──────────────────────────────────────────────────────────
   async getClients(query: ListReportPageQuery) {
-    const [clients, activeClinics, activeDoctors, monthlySignups, appUsersByRole] =
-      await Promise.all([
-        loadSubscribedClients(),
-        dashboardRepository.countClinicsByStatus(),
-        dashboardRepository.countDoctorsByStatus(),
-        dashboardRepository.monthlySignupSeries(12),
-        dashboardRepository.countUsersByRole(),
-      ])
+    const startOfMonth = new Date()
+    startOfMonth.setDate(1)
+    startOfMonth.setHours(0, 0, 0, 0)
+
+    const [
+      clients,
+      activeClinics,
+      activeDoctors,
+      monthlySignups,
+      appUsersByRole,
+      activeClinicsDelta,
+      activeDoctorsDelta,
+    ] = await Promise.all([
+      loadSubscribedClients(),
+      dashboardRepository.countClinicsByStatus(),
+      dashboardRepository.countDoctorsByStatus(),
+      dashboardRepository.monthlySignupSeries(12),
+      dashboardRepository.countUsersByRole(),
+      dashboardRepository.countCreatedSince('clinic', startOfMonth),
+      dashboardRepository.countCreatedSince('doctor', startOfMonth),
+    ])
 
     const activeClinicsCount =
       activeClinics.find((row) => row.status === 'ACTIVE')?._count._all ?? 0
     const activeDoctorsCount =
       activeDoctors.find((row) => row.status === 'ACTIVE')?._count._all ?? 0
     const appUsersCount = appUsersByRole.reduce((sum, row) => sum + row._count._all, 0)
+    const totalClientsDelta = clients.filter((client) => client.createdAt >= startOfMonth).length
 
     let cumulative = 0
     const growth = monthlySignups.map((row) => {
@@ -80,6 +180,7 @@ export const reportsService = {
         cumulativeUsers: cumulative,
       }
     })
+    const appUsersDelta = growth.length > 0 ? (growth.at(-1)?.newSignups ?? 0) : 0
 
     const sortedByRevenue = [...clients].sort((a, b) => b.monthlyValueCents - a.monthlyValueCents)
     const { items, total } = paginate(sortedByRevenue, query.page, query.pageSize)
@@ -90,6 +191,10 @@ export const reportsService = {
         appUsers: appUsersCount,
         activeClinics: activeClinicsCount,
         activeDoctors: activeDoctorsCount,
+        totalClientsDelta,
+        appUsersDelta,
+        activeClinicsDelta,
+        activeDoctorsDelta,
       },
       growth,
       topClients: { items, total },
@@ -98,20 +203,28 @@ export const reportsService = {
 
   // ── 2. Médicos e clínicas ────────────────────────────────────────────────
   async getDoctorsClinics(query: ListReportPageQuery) {
+    const startOfMonth = new Date()
+    startOfMonth.setDate(1)
+    startOfMonth.setHours(0, 0, 0, 0)
+
     const [
-      activeDoctorsCount,
+      activeDoctorsByLinkage,
       activeClinicsByStatus,
+      activeClinicsDelta,
       recordsAccessed,
-      examsSent,
+      examsSentByDoctor,
+      examsSentByClinic,
       specialties,
       stateDistribution,
       doctors,
       total,
     ] = await Promise.all([
-      reportsRepository.countActiveDoctors(),
+      reportsRepository.countActiveDoctorsByClinicLinkage(),
       dashboardRepository.countClinicsByStatus(),
-      reportsRepository.countAccessGrantsAccessed(),
+      dashboardRepository.countCreatedSince('clinic', startOfMonth),
+      reportsRepository.countDistinctPatientsWithDoctorAccess(),
       reportsRepository.countExamsBySource('DOCTOR'),
+      reportsRepository.countExamsBySource('CLINIC'),
       reportsRepository.specialtiesRanking(),
       Promise.all([
         reportsRepository.clinicsCountByState(),
@@ -126,6 +239,7 @@ export const reportsService = {
 
     const activeClinicsCount =
       activeClinicsByStatus.find((row) => row.status === 'ACTIVE')?._count._all ?? 0
+    const examsSent = examsSentByDoctor + examsSentByClinic
 
     const [clinicsByState, doctorsByState] = stateDistribution
     const stateMap = new Map<
@@ -170,8 +284,11 @@ export const reportsService = {
 
     return {
       kpis: {
-        activeDoctors: activeDoctorsCount,
+        activeDoctorsTotal: activeDoctorsByLinkage.total,
+        activeDoctorsSolo: activeDoctorsByLinkage.solo,
+        activeDoctorsVinculados: activeDoctorsByLinkage.linked,
         activeClinics: activeClinicsCount,
+        activeClinicsDelta,
         recordsAccessed,
         examsSent,
       },
@@ -186,55 +303,79 @@ export const reportsService = {
 
   // ── 3. Planos ────────────────────────────────────────────────────────────
   async getPlans(query: ListReportPageQuery) {
-    const [activePlansCount, activeSubscriptions, movementLogs] = await Promise.all([
+    const now = new Date()
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+
+    const [
+      activePlansCount,
+      activePlansByType,
+      subscribedClients,
+      movementLogs,
+      currentMonthPayments,
+      previousMonthPayments,
+    ] = await Promise.all([
       reportsRepository.countActivePlans(),
-      reportsRepository.findActiveSubscriptionsWithPlan(),
+      reportsRepository.countActivePlansByType(),
+      // Clínicas (inclui hospital/consultório/laboratório, todos institutionType
+      // de Clinic) + médicos com assinatura ativa/atrasada e não deletados — mesma
+      // fonte do relatório de Clientes, garante que só cliente real e com plano
+      // de fato vinculado entra na distribuição/receita por plano abaixo.
+      loadSubscribedClients(),
       auditLogsRepository.findMany(
         { targetType: 'Subscription' },
         { skip: (query.page - 1) * query.pageSize, take: query.pageSize },
       ),
+      reportsRepository.paymentsTotalForMonth(currentMonthStart),
+      reportsRepository.paymentsTotalForMonth(previousMonthStart),
     ])
     const movementsTotal = await auditLogsRepository.count({ targetType: 'Subscription' })
 
+    const clinicsCount = activePlansByType.find((row) => row.type === 'CLINIC')?._count._all ?? 0
+    const doctorsCount = activePlansByType.find((row) => row.type === 'DOCTOR')?._count._all ?? 0
+
     const monthlyRevenueCents = Math.round(
-      activeSubscriptions.reduce((sum, sub) => sum + Number(sub.plan.basePrice) * 100, 0),
-    )
-    const extraRevenueCents = Math.round(
-      activeSubscriptions.reduce(
-        (sum, sub) => sum + sub.extraDoctorsCount * Number(sub.plan.extraMemberFee ?? 0) * 100,
+      subscribedClients.reduce(
+        (sum, client) => sum + (client.monthlyValueCents - client.extraFeeCents),
         0,
       ),
     )
+    const extraRevenueCents = Math.round(
+      subscribedClients.reduce((sum, client) => sum + client.extraFeeCents, 0),
+    )
+
+    const currentInvoicedCents = currentMonthPayments._sum.amountCents ?? 0
+    const previousInvoicedCents = previousMonthPayments._sum.amountCents ?? 0
+    const revenueDeltaPercent =
+      previousInvoicedCents > 0
+        ? Math.round(((currentInvoicedCents - previousInvoicedCents) / previousInvoicedCents) * 100)
+        : null
 
     const distributionMap = new Map<
       string,
       { planId: string; planName: string; type: string; count: number }
     >()
-    for (const sub of activeSubscriptions) {
-      const existing = distributionMap.get(sub.planId)
-      if (existing) existing.count += 1
+    const revenueMap = new Map<string, { planId: string; planName: string; revenueCents: number }>()
+    for (const client of subscribedClients) {
+      if (!client.planId || !client.planName) continue
+
+      const existingDistribution = distributionMap.get(client.planId)
+      if (existingDistribution) existingDistribution.count += 1
       else
-        distributionMap.set(sub.planId, {
-          planId: sub.planId,
-          planName: sub.plan.name,
-          type: sub.plan.type,
+        distributionMap.set(client.planId, {
+          planId: client.planId,
+          planName: client.planName,
+          type: client.type,
           count: 1,
         })
-    }
-    const revenueMap = new Map<string, { planId: string; planName: string; revenueCents: number }>()
-    for (const sub of activeSubscriptions) {
-      const revenue = Math.round(
-        (Number(sub.plan.basePrice) +
-          sub.extraDoctorsCount * Number(sub.plan.extraMemberFee ?? 0)) *
-          100,
-      )
-      const existing = revenueMap.get(sub.planId)
-      if (existing) existing.revenueCents += revenue
+
+      const existingRevenue = revenueMap.get(client.planId)
+      if (existingRevenue) existingRevenue.revenueCents += client.monthlyValueCents
       else
-        revenueMap.set(sub.planId, {
-          planId: sub.planId,
-          planName: sub.plan.name,
-          revenueCents: revenue,
+        revenueMap.set(client.planId, {
+          planId: client.planId,
+          planName: client.planName,
+          revenueCents: client.monthlyValueCents,
         })
     }
 
@@ -270,23 +411,31 @@ export const reportsService = {
     )
 
     return {
-      kpis: { activePlansCount, monthlyRevenueCents, extraRevenueCents },
+      kpis: {
+        activePlansCount,
+        activePlansBreakdown: { clinicsCount, doctorsCount },
+        monthlyRevenueCents,
+        revenueDeltaPercent,
+        extraRevenueCents,
+      },
       distribution: Array.from(distributionMap.values()),
-      revenueRanking: Array.from(revenueMap.values()).sort(
-        (a, b) => b.revenueCents - a.revenueCents,
-      ),
+      revenueRanking: Array.from(revenueMap.values())
+        .sort((a, b) => b.revenueCents - a.revenueCents)
+        .slice(0, 4),
       movements: { items: movements, total: movementsTotal },
     }
   },
 
   // ── 4. Financeiro ────────────────────────────────────────────────────────
   async getFinancial(query: ListReportPageQuery) {
-    const [payableSummary, receivableSummary, evolutionRows, clients] = await Promise.all([
-      financialRepository.summarizeAccountsPayable(),
-      financialRepository.summarizeReceivables(),
-      reportsRepository.paymentEvolutionByMonth(),
-      loadSubscribedClients(),
-    ])
+    const [payableSummary, payableByCategory, receivableSummary, evolutionRows, clients] =
+      await Promise.all([
+        financialRepository.summarizeAccountsPayable(),
+        financialRepository.summarizePayableByCategory(),
+        financialRepository.summarizeReceivables(),
+        reportsRepository.paymentEvolutionByMonth(),
+        loadSubscribedClients(),
+      ])
 
     const averageTicketCents =
       receivableSummary.totalCount > 0
@@ -337,13 +486,15 @@ export const reportsService = {
           { status: 'PENDING', valueCents: payableSummary.pendingCents },
           { status: 'OVERDUE', valueCents: payableSummary.overdueCents },
         ],
+        categoryTotalCents: payableSummary.pendingCents + payableSummary.overdueCents,
+        byCategory: payableByCategory,
       },
       newClients: { items, total },
     }
   },
 
   // ── 5. Crescimento do app ────────────────────────────────────────────────
-  async getGrowth() {
+  async getGrowth(state?: string) {
     const thresholdDate = new Date()
     thresholdDate.setDate(thresholdDate.getDate() - 30)
 
@@ -364,7 +515,7 @@ export const reportsService = {
       storeAnalyticsService.getAggregatedDownloads({ days: 30 }),
       reportsRepository.countAppUsersAtRisk(thresholdDate),
       reportsRepository.averageMedicationsPerUser(),
-      reportsRepository.countUsersByCity(),
+      reportsRepository.countUsersByCity(state),
     ])
 
     let cumulative = 0
@@ -425,37 +576,49 @@ export const reportsService = {
 
   // ── 6. Medicamentos ──────────────────────────────────────────────────────
   async getMedications(query: MedicationsReportQuery) {
-    const startOfMonth = new Date()
-    startOfMonth.setDate(1)
-    startOfMonth.setHours(0, 0, 0, 0)
+    const now = new Date()
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
 
     const filters = {
       ...(query.search && { search: query.search }),
       ...(query.stripeColor && { stripeColor: query.stripeColor }),
       ...(query.continuousUse !== undefined && { continuousUse: query.continuousUse }),
       ...(query.state && { state: query.state }),
+      ...(query.city && { city: query.city }),
+      ...(query.clinicIds && { clinicIds: query.clinicIds }),
+      ...(query.doctorIds && { doctorIds: query.doctorIds }),
     }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
 
     const [
       total,
-      medications,
+      groups,
       ranking,
       tarja,
+      doseAdherence,
       totalMedications,
       continuousUseCount,
       createdThisMonth,
+      createdPreviousMonth,
       avgPerUser,
+      avgPerUserPreviousMonth,
     ] = await Promise.all([
-      reportsRepository.countMedicationsFiltered(filters),
-      reportsRepository.findMedications(filters, pagination),
+      reportsRepository.countMedicationsGrouped(filters),
+      reportsRepository.medicationsGrouped(filters, pagination),
       reportsRepository.medicationsRanking(),
       reportsRepository.tarjaDistribution(),
+      reportsRepository.doseAdherenceDistribution(),
       reportsRepository.countMedications(),
       reportsRepository.countMedicationsContinuousUse(),
-      reportsRepository.countMedicationsCreatedSince(startOfMonth),
+      reportsRepository.countMedicationsCreatedInRange(currentMonthStart, now),
+      reportsRepository.countMedicationsCreatedInRange(previousMonthStart, currentMonthStart),
       reportsRepository.averageMedicationsPerUser(),
+      reportsRepository.averageMedicationsPerUserAsOf(currentMonthStart),
     ])
+
+    const onTime = doseAdherence.find((row) => row.state === 'TAKEN')?._count._all ?? 0
+    const late = doseAdherence.find((row) => row.state === 'LATE')?._count._all ?? 0
 
     return {
       kpis: {
@@ -463,105 +626,128 @@ export const reportsService = {
         continuousUseCount,
         createdThisMonth,
         avgPerUser: Math.round(avgPerUser * 10) / 10,
+        createdThisMonthDeltaPercent: percentDelta(createdThisMonth, createdPreviousMonth),
+        avgPerUserDeltaPercent: percentDelta(avgPerUser, avgPerUserPreviousMonth),
       },
-      topMedications: ranking.map((row) => ({ name: row.name, count: row._count._all })),
+      topMedications: ranking.map((row) => ({
+        name: row.name,
+        dosage: row.dosage,
+        dosageUnit: row.dosageUnit,
+        count: Number(row.count),
+      })),
       tarjaDistribution: tarja.map((row) => ({
         stripeColor: row.stripeColor,
         count: row._count._all,
       })),
+      doseAdherence: { onTime, late },
       items: {
-        items: medications.map((medication) => ({
-          id: medication.id,
-          name: medication.name,
-          form: medication.form,
-          stripeColor: medication.stripeColor,
-          continuousUse: medication.continuousUse,
-          active: medication.active,
-          state: medication.member.user?.state ?? null,
-          createdAt: medication.createdAt,
+        items: groups.map((group) => ({
+          name: group.name,
+          dosage: group.dosage,
+          dosageUnit: group.dosageUnit,
+          form: group.form,
+          stripeColor: group.stripeColor,
+          totalCount: Number(group.totalCount),
+          continuousUsePercent: group.continuousUsePercent,
+          onTimePercent:
+            Number(group.takenOrLate) > 0
+              ? Math.round((Number(group.taken) / Number(group.takenOrLate)) * 1000) / 10
+              : null,
         })),
         total,
       },
     }
   },
 
+  async getMedicationCities(state: string) {
+    return reportsRepository.distinctCitiesByState(state)
+  },
+
   // ── 7. Churn ──────────────────────────────────────────────────────────────
   async getChurn(query: ChurnReportQuery) {
-    const thresholdDate = new Date()
-    thresholdDate.setDate(thresholdDate.getDate() - query.thresholdDays)
-    const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
-
-    const [doctorsAtRiskCount, clinicsAtRiskCount, usersAtRiskCount] = await Promise.all([
-      reportsRepository.countDoctorsAtRisk(thresholdDate),
-      reportsRepository.countClinicsAtRisk(thresholdDate),
-      reportsRepository.countAppUsersAtRisk(thresholdDate),
-    ])
-
-    let rows: {
-      id: string
-      name: string
-      planName: string | null
-      lastLoginAt: Date | null
-      createdAt: Date
-    }[] = []
-    let total = 0
-
-    if (query.tab === 'doctors') {
-      const [doctors, count] = await Promise.all([
-        reportsRepository.findDoctorsAtRisk(thresholdDate, pagination),
-        reportsRepository.countDoctorsAtRisk(thresholdDate),
-      ])
-      rows = doctors.map((doctor) => ({
-        id: doctor.id,
-        name: doctor.user.name,
-        planName: doctor.plan?.name ?? null,
-        lastLoginAt: doctor.user.lastLoginAt,
-        createdAt: doctor.user.createdAt,
-      }))
-      total = count
-    } else if (query.tab === 'clinics') {
-      const [clinics, count] = await Promise.all([
-        reportsRepository.findClinicsAtRisk(thresholdDate, pagination),
-        reportsRepository.countClinicsAtRisk(thresholdDate),
-      ])
-      rows = clinics.map((clinic) => ({
-        id: clinic.id,
-        name: clinic.tradeName,
-        planName: clinic.plan?.name ?? null,
-        lastLoginAt: clinic.admins[0]?.user.lastLoginAt ?? null,
-        createdAt: clinic.admins[0]?.user.createdAt ?? clinic.createdAt,
-      }))
-      total = count
-    } else {
-      const [users, count] = await Promise.all([
-        reportsRepository.findAppUsersAtRisk(thresholdDate, pagination),
-        reportsRepository.countAppUsersAtRisk(thresholdDate),
-      ])
-      rows = users.map((user) => ({
-        id: user.id,
-        name: user.name,
-        planName: null,
-        lastLoginAt: user.lastLoginAt,
-        createdAt: user.createdAt,
-      }))
-      total = count
+    const now = new Date()
+    const thresholdDate = new Date(now.getTime() - query.thresholdDays * DAY_MS)
+    const filters = {
+      thresholdDate,
+      ...(query.search && { search: query.search }),
+      ...(query.status && { status: query.status }),
+      ...(query.planId && { planId: query.planId }),
     }
+
+    const [{ doctors, clinics, users }, totalDoctors, totalClinics, totalUsers, evolutionRows] =
+      await Promise.all([
+        loadAtRiskRows(filters),
+        doctorsRepository.count({}),
+        clinicsRepository.count({}),
+        usersRepository.count({}),
+        reportsRepository.riskEvolutionByMonth(query.evolutionMonths, query.thresholdDays),
+      ])
+
+    const doctorsAtRisk = doctors.length
+    const clinicsAtRisk = clinics.length
+    const usersAtRisk = users.length
+    const allRows = [...doctors, ...clinics, ...users]
+    const totalAtRisk = allRows.length
+
+    const tabRows =
+      query.tab === 'doctors'
+        ? doctors
+        : query.tab === 'clinics'
+          ? clinics
+          : query.tab === 'users'
+            ? users
+            : allRows
+    const sorted = sortChurnRows(tabRows, query.sortBy, query.sortDir, now)
+    const { items, total } = paginate(sorted, query.page, query.pageSize)
+
+    const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0)
 
     return {
       kpis: {
-        doctorsAtRisk: doctorsAtRiskCount,
-        clinicsAtRisk: clinicsAtRiskCount,
-        usersAtRisk: usersAtRiskCount,
+        totalAtRisk,
+        clinicsAtRisk,
+        clinicsTotal: totalClinics,
+        clinicsAtRiskPercent: pct(clinicsAtRisk, totalClinics),
+        doctorsAtRisk,
+        doctorsTotal: totalDoctors,
+        doctorsAtRiskPercent: pct(doctorsAtRisk, totalDoctors),
+        usersAtRisk,
+        usersTotal: totalUsers,
+        usersAtRiskPercent: pct(usersAtRisk, totalUsers),
+        thresholdDays: query.thresholdDays,
       },
-      // Sem snapshots históricos de status — mostramos só a situação atual por
-      // limiar de inatividade, não uma série temporal fabricada.
-      evolutionAvailable: false,
+      evolutionAvailable: true as const,
+      evolution: evolutionRows.map((row) => ({
+        month: row.month.toISOString().slice(0, 7),
+        clinicsAtRisk: row.clinicsAtRisk,
+        doctorsAtRisk: row.doctorsAtRisk,
+        usersAtRisk: row.usersAtRisk,
+      })),
       distribution: [
-        { segment: 'doctors', count: doctorsAtRiskCount },
-        { segment: 'clinics', count: clinicsAtRiskCount },
-        { segment: 'users', count: usersAtRiskCount },
+        { segment: 'users' as const, count: usersAtRisk },
+        { segment: 'doctors' as const, count: doctorsAtRisk },
+        { segment: 'clinics' as const, count: clinicsAtRisk },
       ],
-      rows: { items: rows, total },
+      tabCounts: {
+        all: totalAtRisk,
+        doctors: doctorsAtRisk,
+        clinics: clinicsAtRisk,
+        users: usersAtRisk,
+      },
+      rows: {
+        items: items.map((row) => ({
+          id: row.id,
+          type: row.type,
+          name: row.name,
+          planName: row.planName,
+          createdAt: row.createdAt,
+          lastLoginAt: row.lastLoginAt,
+          inactiveDays: Math.floor(
+            (now.getTime() - (row.lastLoginAt ?? row.createdAt).getTime()) / DAY_MS,
+          ),
+        })),
+        total,
+      },
     }
   },
 }

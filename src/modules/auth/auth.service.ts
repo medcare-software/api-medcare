@@ -10,10 +10,12 @@ import { passwordResetCodeTemplate, sendMail } from '../../shared/mail/index.js'
 import { hashForLookup, onlyDigits, recordAuditEvent } from '../../shared/security/index.js'
 import type { PasswordResetSessionPayload } from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
+import { auditLogsRepository } from '../audit-logs/audit-logs.repository.js'
 import { authRepository } from './auth.repository.js'
 import type { CrmLoginInput, EmailLoginInput, IdentifierLoginInput } from './auth.schema.js'
 
 const MAX_RESET_CODE_ATTEMPTS = 5
+const LOGIN_AUDIT_THROTTLE_MS = 24 * 60 * 60 * 1000
 
 // Reutilizado tanto pelo fluxo de "esqueci a senha" (após verificar o código)
 // quanto pela ativação de conta de membro familiar (link de e-mail) — mesmo
@@ -139,6 +141,26 @@ export const authService = {
     const user = await authRepository.findUserById(record.userId)
     if (!user || user.status !== 'ACTIVE') {
       throw new AppError({ code: 'UNAUTHORIZED', message: 'Conta inativa ou inexistente' })
+    }
+
+    // lastLoginAt passa a refletir uso real do app (não só login por credencial)
+    // — sessões longas via refresh token não devem aparecer como "inativas" nos
+    // relatórios de churn. O AuditLog LOGIN, por outro lado, é gravado com
+    // throttle de 24h aqui: cada refresh não gera um evento novo, só o primeiro
+    // do dia — dá granularidade diária pro histórico (gráfico de evolução de
+    // inatividade) sem inundar a tabela com um registro a cada renovação de token.
+    await authRepository.updateLastLogin(user.id)
+    const lastLoginAudit = await auditLogsRepository.findLatestByActorAndAction(user.id, 'LOGIN')
+    if (
+      !lastLoginAudit ||
+      Date.now() - lastLoginAudit.createdAt.getTime() > LOGIN_AUDIT_THROTTLE_MS
+    ) {
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'LOGIN',
+        targetType: 'User',
+        targetId: user.id,
+      })
     }
 
     await authRepository.revokeRefreshToken(jti)

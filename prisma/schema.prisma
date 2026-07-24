@@ -63,6 +63,7 @@ enum VaccineStatus {
 enum ExamSource {
   GMAIL
   DOCTOR
+  CLINIC
   MANUAL
 }
 
@@ -87,6 +88,13 @@ enum AccessValidity {
 enum PlanType {
   CLINIC
   DOCTOR
+}
+
+enum ClinicInstitutionType {
+  CLINICA
+  CONSULTORIO
+  HOSPITAL
+  LABORATORIO
 }
 
 enum BillingCycle {
@@ -398,6 +406,7 @@ model Exam {
   id                    String     @id @default(cuid())
   memberId              String
   doctorId              String? // autor quando enviado por um médico (source=DOCTOR) — nulo em registros antigos/manuais
+  clinicId              String? // autora quando enviado por uma clínica (source=CLINIC)
   name                  String
   examType              ExamType   @default(OUTROS)
   clinicName            String? // nome do laboratório/convênio informado livremente, não uma Clinic cadastrada
@@ -413,9 +422,11 @@ model Exam {
 
   member FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
   doctor Doctor?      @relation(fields: [doctorId], references: [id])
+  clinic Clinic?      @relation(fields: [clinicId], references: [id])
 
   @@index([memberId])
   @@index([doctorId])
+  @@index([clinicId])
   @@map("exams")
 }
 
@@ -628,18 +639,19 @@ model Doctor {
 }
 
 model Clinic {
-  id                 String     @id @default(cuid())
+  id                 String                @id @default(cuid())
   legalNameEncrypted Bytes
   tradeName          String
   cnpjEncrypted      Bytes
-  cnpjHash           String     @unique
+  cnpjHash           String                @unique
   email              String?
   phone              String
   address            Json
+  institutionType    ClinicInstitutionType @default(CLINICA)
   planId             String?
-  status             UserStatus @default(ACTIVE)
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  status             UserStatus            @default(ACTIVE)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
   deletedAt          DateTime?
 
   plan          Plan?                @relation(fields: [planId], references: [id], onDelete: SetNull)
@@ -647,6 +659,7 @@ model Clinic {
   admins        ClinicAdminProfile[]
   accessGrants  MedicalAccessGrant[]
   subscriptions Subscription[]
+  exams         Exam[]
 
   @@index([status])
   @@map("clinics")

@@ -361,6 +361,18 @@ export const financialRepository = {
     }
   },
 
+  async summarizePayableByCategory() {
+    const rows = await db.accountPayable.groupBy({
+      by: ['category'],
+      where: { status: { in: ['PENDING', 'OVERDUE'] } },
+      _sum: { valueCents: true },
+    })
+
+    return rows
+      .map((row) => ({ category: row.category, valueCents: row._sum.valueCents ?? 0 }))
+      .sort((a, b) => b.valueCents - a.valueCents)
+  },
+
   // Baseado nos Payment (cobrança por ciclo) do mês de referência corrente —
   // financialService.getReceivablesSummary() garante que esses registros
   // existem (ensureCurrentMonthReceivables) antes de chamar esta função.

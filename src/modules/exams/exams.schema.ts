@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { requiredDate } from '../../shared/utils/zod-date.js'
 
-const ExamSourceEnum = z.enum(['GMAIL', 'DOCTOR', 'MANUAL'])
+const ExamSourceEnum = z.enum(['GMAIL', 'DOCTOR', 'CLINIC', 'MANUAL'])
 const ExamTypeEnum = z.enum(['LABORATORIAL', 'IMAGEM', 'OUTROS'])
 
 export const CreateExamSchema = z.object({
@@ -9,7 +9,10 @@ export const CreateExamSchema = z.object({
   name: z.string().min(1, { message: 'Nome do exame é obrigatório' }),
   examType: ExamTypeEnum.default('OUTROS'),
   clinicName: z.string().min(1, { message: 'Nome da clínica é obrigatório' }).optional(),
-  requestingDoctorName: z.string().min(1, { message: 'Médico solicitante é obrigatório' }),
+  requestingDoctorName: z
+    .string()
+    .min(1, { message: 'Médico solicitante é obrigatório' })
+    .optional(),
   observations: z.string().min(1).optional(),
   examDate: requiredDate('Data do exame inválida', {
     notFuture: true,

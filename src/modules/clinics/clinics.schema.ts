@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
 const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
+const InstitutionTypeEnum = z.enum(['CLINICA', 'CONSULTORIO', 'HOSPITAL', 'LABORATORIO'])
 
 const AddressSchema = z.object({
   street: z.string().min(1),
@@ -20,6 +21,7 @@ export const CreateClinicSchema = z.object({
   email: z.string().email().optional(),
   phone: z.string().min(8),
   address: AddressSchema,
+  institutionType: InstitutionTypeEnum.default('CLINICA'),
   planId: z.string().min(1).optional(),
   adminName: z.string().min(1),
   adminEmail: z.string().email(),

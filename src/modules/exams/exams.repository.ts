@@ -8,6 +8,7 @@ const DOCTOR_SELECT = { select: { crmNumber: true, crmState: true } }
 
 type ExamCreateData = Omit<CreateExamInput, 'memberId' | 'observations'> & {
   doctorId?: string
+  clinicId?: string
   observationsEncrypted?: Buffer<ArrayBuffer>
 }
 

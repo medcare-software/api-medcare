@@ -42,15 +42,28 @@ export const dashboardRepository = {
 
   // Novos cadastros de usuário final (app-medcare) por mês — substitui "downloads
   // por mês" (não há telemetria de instalação, ver plano de admin, Fase 5).
+  // Gera os `months` meses do calendário via generate_series + LEFT JOIN pra
+  // sempre devolver a série completa (0 nos meses sem cadastro), em vez de só
+  // os meses que efetivamente têm linhas em users.createdAt.
   monthlySignupSeries(months: number) {
     return db.$queryRaw<{ month: Date; count: bigint }[]>`
-      SELECT date_trunc('month', "createdAt") AS month, count(*)::bigint AS count
-      FROM users
-      WHERE role IN ('PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER')
-        AND "deletedAt" IS NULL
-        AND "createdAt" >= now() - make_interval(months => ${months}::int)
-      GROUP BY 1
-      ORDER BY 1
+      SELECT
+        months.month,
+        COALESCE(counts.count, 0)::bigint AS count
+      FROM generate_series(
+        date_trunc('month', now()) - make_interval(months => (${months}::int - 1)),
+        date_trunc('month', now()),
+        interval '1 month'
+      ) AS months(month)
+      LEFT JOIN (
+        SELECT date_trunc('month', "createdAt") AS month, count(*)::bigint AS count
+        FROM users
+        WHERE role IN ('PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER')
+          AND "deletedAt" IS NULL
+          AND "createdAt" >= now() - make_interval(months => ${months}::int)
+        GROUP BY 1
+      ) counts ON counts.month = months.month
+      ORDER BY months.month
     `
   },
 
