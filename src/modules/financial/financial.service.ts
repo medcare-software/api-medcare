@@ -26,6 +26,7 @@ import type {
   MarkPaidInput,
   PayReceivableInput,
   UpdateAccountPayableInput,
+  UpdateReceivableInput,
   UpdateSupplierInput,
 } from './financial.schema.js'
 
@@ -351,6 +352,37 @@ export const financialService = {
   async getReceivablesSummary(referenceMonth?: Date) {
     await ensureCurrentMonthReceivables()
     return financialRepository.summarizeReceivables(referenceMonth)
+  },
+
+  // Edição manual de uma cobrança já gerada (dueDate/forma/valor) — diferente de
+  // payReceivable, que marca como paga. Só cobranças em aberto podem ser editadas.
+  async updateReceivable(user: AuthUser, id: string, input: UpdateReceivableInput) {
+    const receivable = await financialRepository.findReceivableById(id)
+    if (!receivable) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Cobrança não encontrada' })
+    }
+    if (['PAID', 'PAID_LATE', 'CANCELLED'].includes(receivable.status)) {
+      throw new AppError({
+        code: 'CONFLICT',
+        message: 'Cobrança paga ou cancelada não pode ser editada',
+      })
+    }
+
+    const updated = await financialRepository.updateReceivable(
+      id,
+      omitUndefined({
+        dueDate: input.dueDate,
+        paymentMethod: input.paymentMethod,
+        amountCents: input.valueCents,
+      }),
+    )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'UPDATE_RECEIVABLE',
+      targetType: 'Payment',
+      targetId: id,
+    })
+    return updated
   },
 
   async payReceivable(user: AuthUser, id: string, input: PayReceivableInput) {

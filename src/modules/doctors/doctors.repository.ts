@@ -251,11 +251,30 @@ export const doctorsRepository = {
     return db.$transaction([
       db.doctor.update({
         where: { id: doctorId },
-        data: { deletedAt: new Date(), status: 'INACTIVE' },
+        data: {
+          deletedAt: new Date(),
+          status: 'INACTIVE',
+          // Libera o CRM pra reuso: (crmNumber, crmState) é @@unique no schema
+          // e não pode ficar preso a um médico excluído — sem isso, recadastrar
+          // com o mesmo CRM (mesmo médico de novo, ou outro por engano) falha
+          // com "já cadastrado" mesmo o registro antigo estando excluído.
+          crmNumber: `deleted:${doctorId}`,
+        },
       }),
       db.user.update({
         where: { id: userId },
-        data: { deletedAt: new Date(), status: 'INACTIVE' },
+        data: {
+          deletedAt: new Date(),
+          status: 'INACTIVE',
+          // Mesmo racional do CRM acima — cpfHash é @unique (nullable), então
+          // basta zerar pra liberar o CPF pra um novo cadastro.
+          cpfHash: null,
+          // E-mail também é @unique — sem renomear, recadastrar um médico com o
+          // mesmo e-mail falha com "já cadastrado" (findUserByEmail acha esse
+          // User excluído e sua relação `doctor`, mesmo soft-deletada). Mesmo
+          // padrão de scripts/soft-delete-user-by-email.ts.
+          email: `deleted+${userId}.${Date.now()}@deleted.local`,
+        },
       }),
       db.refreshToken.updateMany({
         where: { userId, revoked: false },

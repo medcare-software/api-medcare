@@ -108,6 +108,30 @@ export const doctorsService = {
         specialties: input.specialties,
         ...(input.planId !== undefined && { planId: input.planId }),
       })
+
+      // Mesmo anexando o perfil de médico a um User já existente (ex.: paciente
+      // do app-medcare), o e-mail de ativação precisa ser enviado — sem isso a
+      // pessoa nunca fica sabendo que ganhou acesso ao portal médico.
+      try {
+        const activationToken = issuePasswordResetSessionToken(
+          fastify,
+          existingUser.id,
+          env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+        )
+        const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
+        const template = doctorActivationLinkTemplate(link, input.name)
+        await sendMail({ to: input.email, ...template })
+      } catch (err) {
+        const cause = err instanceof Error ? err.message : String(err)
+        console.error(`[doctors] Falha ao enviar e-mail de ativação para ${input.email}: ${cause}`)
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'DOCTOR_ACTIVATION_EMAIL_FAILED',
+          targetType: 'Doctor',
+          targetId: doctor.id,
+          metadata: { email: input.email, error: cause },
+        })
+      }
     } else {
       // Senha temporária nunca é exposta — o médico define a própria senha pelo
       // link de ativação enviado por e-mail (mesmo mecanismo de

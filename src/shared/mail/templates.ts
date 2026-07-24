@@ -41,6 +41,21 @@ export function doctorActivationLinkTemplate(link: string, doctorName: string) {
   }
 }
 
+export function clinicAdminActivationLinkTemplate(link: string, adminName: string) {
+  return {
+    subject: 'Bem-vindo ao Medcare — defina sua senha',
+    text: `Olá, ${adminName}! Você foi cadastrado como administrador de clínica no Medcare. Para acessar o painel da clínica, abra o link abaixo e defina sua senha: ${link}\nSe você não esperava este e-mail, ignore-o.`,
+    html: `
+      <p>Olá, ${adminName}!</p>
+      <p>Você foi cadastrado como administrador de clínica no Medcare.</p>
+      <p>Para acessar o painel da clínica, toque no botão abaixo e defina sua senha:</p>
+      <p><a href="${link}" style="display:inline-block;padding:12px 24px;background:#1e40af;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Definir minha senha</a></p>
+      <p>Se o botão não funcionar, copie e cole este link no navegador: ${link}</p>
+      <p>Se você não esperava este e-mail, ignore-o.</p>
+    `,
+  }
+}
+
 export function employeeActivationLinkTemplate(link: string, employeeName: string) {
   return {
     subject: 'Bem-vindo ao Medcare — defina sua senha',

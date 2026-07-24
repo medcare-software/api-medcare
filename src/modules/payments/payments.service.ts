@@ -38,9 +38,22 @@ export async function ensurePaymentsGenerated(subscription: Subscription) {
   // Subscription.status (que na prática nunca é escrito em lugar nenhum do
   // código pra 'LATE') — um ciclo só vira PAID/PAID_LATE quando alguém
   // confirma o recebimento de verdade (ver financialService#payReceivable).
+  //
+  // Carência de 30 dias no primeiro ciclo: sem isso, `dueDate` cai no próprio
+  // dia da criação da assinatura (mesmo dia do mês, `billingDay`), então um
+  // vínculo feito hoje já nasce OVERDUE horas depois. Só o primeiro ciclo
+  // recebe a carência — ciclos seguintes seguem a regra normal de vencimento.
+  const GRACE_PERIOD_MS = 30 * 24 * 60 * 60 * 1000
+  const [firstReferenceMonth] = referenceMonths
+  if (!firstReferenceMonth) return
+  const firstReferenceMonthTime = firstReferenceMonth.getTime()
+
   const rows = referenceMonths.map((referenceMonth) => {
     const dueDate = new Date(referenceMonth.getFullYear(), referenceMonth.getMonth(), billingDay)
-    const status = dueDate > now ? 'PENDING' : 'OVERDUE'
+    const isFirstCycle = referenceMonth.getTime() === firstReferenceMonthTime
+    const withinGracePeriod =
+      isFirstCycle && now.getTime() - subscription.createdAt.getTime() < GRACE_PERIOD_MS
+    const status = withinGracePeriod || dueDate > now ? 'PENDING' : 'OVERDUE'
     return {
       subscriptionId: subscription.id,
       referenceMonth,

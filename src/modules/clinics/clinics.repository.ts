@@ -147,7 +147,7 @@ export const clinicsRepository = {
         data: { userId: adminUser.id, clinicId: clinic.id },
       })
 
-      return clinic
+      return { clinic, adminUserId: adminUser.id }
     })
   },
 
@@ -186,7 +186,15 @@ export const clinicsRepository = {
     return db.$transaction([
       db.clinic.update({
         where: { id: clinicId },
-        data: { deletedAt: new Date(), status: 'INACTIVE' },
+        data: {
+          deletedAt: new Date(),
+          status: 'INACTIVE',
+          // Libera o CNPJ pra reuso: cnpjHash é @unique no schema e não pode
+          // ficar preso a uma clínica excluída — sem isso, recadastrar com o
+          // mesmo CNPJ falha com "já cadastrado" mesmo o registro antigo
+          // estando excluído (mesmo racional do CRM em doctors.repository.ts).
+          cnpjHash: `deleted:${clinicId}`,
+        },
       }),
       db.clinicDoctorLink.updateMany({ where: { clinicId }, data: { active: false } }),
       // Sem isso, a assinatura ficaria ACTIVE indefinidamente e continuaria
@@ -201,7 +209,14 @@ export const clinicsRepository = {
         ? [
             db.user.update({
               where: { id: adminUserId },
-              data: { deletedAt: new Date(), status: 'INACTIVE' },
+              data: {
+                deletedAt: new Date(),
+                status: 'INACTIVE',
+                // E-mail é @unique — sem renomear, recadastrar uma clínica com o
+                // mesmo e-mail de admin falha com "já cadastrado" (mesmo racional
+                // do CNPJ acima e de doctors.repository.ts#deactivateTx).
+                email: `deleted+${adminUserId}.${Date.now()}@deleted.local`,
+              },
             }),
             db.refreshToken.updateMany({
               where: { userId: adminUserId, revoked: false },

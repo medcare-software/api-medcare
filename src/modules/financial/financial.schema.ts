@@ -143,6 +143,15 @@ export const ListReceivablesQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 })
 
+// Edição manual de uma cobrança já gerada (dueDate/forma/valor) — diferente de
+// PayReceivableSchema, que marca como paga. Sem refine de "vencimento no
+// passado": mesma razão de UpdateAccountPayableSchema.
+export const UpdateReceivableSchema = z.object({
+  dueDate: z.coerce.date().optional(),
+  paymentMethod: PaymentMethodEnum.optional(),
+  valueCents: z.number().int().positive().optional(),
+})
+
 export const PayReceivableSchema = z.object({
   paidAt: z.coerce.date().optional(),
   paymentMethod: PaymentMethodEnum.optional(),
@@ -162,5 +171,6 @@ export type MarkPaidInput = z.infer<typeof MarkPaidSchema>
 export type ListAccountsPayableQuery = z.infer<typeof ListAccountsPayableQuerySchema>
 export type RecurrenceConfigInput = z.infer<typeof RecurrenceConfigSchema>
 export type ListReceivablesQuery = z.infer<typeof ListReceivablesQuerySchema>
+export type UpdateReceivableInput = z.infer<typeof UpdateReceivableSchema>
 export type PayReceivableInput = z.infer<typeof PayReceivableSchema>
 export type CancelReceivableInput = z.infer<typeof CancelReceivableSchema>

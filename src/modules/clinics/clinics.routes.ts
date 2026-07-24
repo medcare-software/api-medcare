@@ -26,7 +26,7 @@ export default async function clinicsRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const clinic = await clinicsService.create(req.user, body.data)
+      const clinic = await clinicsService.create(fastify, req.user, body.data)
       return reply.status(201).send({ data: clinic })
     },
   )

@@ -79,10 +79,11 @@ type MarkPaidData = {
 }
 
 type UpdateReceivableData = {
-  status: AccountPayableStatus
-  paidAt: Date
+  status?: AccountPayableStatus
+  paidAt?: Date
   paymentMethod?: PaymentMethod
   amountCents?: number
+  dueDate?: Date
 }
 
 type ReceivablesListFilters = {
