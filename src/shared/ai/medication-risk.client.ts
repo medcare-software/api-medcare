@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 
 import { env } from '../../config/env.js'
+import { normalizeDrugName } from '../utils/index.js'
 
 let client: Anthropic | null = null
 
@@ -19,6 +20,10 @@ const RISK_TYPES = ['interaction', 'allergy'] as const
 export type MedicationRisk = {
   type: (typeof RISK_TYPES)[number]
   severity: (typeof SEVERITIES)[number]
+  // Nome exato (dentre os medicamentos novos informados em `newDrugs`) ao qual
+  // esse risco se refere — nunca um risco que existe só entre itens já
+  // cadastrados anteriormente (ver filtro em checkMedicationRisk).
+  relatedNewDrug: string
   conflictingItem: string
   description: string
 }
@@ -41,6 +46,7 @@ const RiskToolInputSchema = z.object({
       z.object({
         type: z.enum(RISK_TYPES),
         severity: z.enum(SEVERITIES),
+        relatedNewDrug: z.string().min(1),
         conflictingItem: z.string().min(1),
         description: z.string().min(1),
       }),
@@ -77,17 +83,22 @@ const RISK_TOOL: Anthropic.Tool = {
               enum: [...SEVERITIES],
               description: 'Gravidade clínica do risco.',
             },
+            relatedNewDrug: {
+              type: 'string',
+              description:
+                'Nome exato de UM dos medicamentos novos (dentre os listados em "Novo(s) medicamento(s) sendo cadastrado(s)") ao qual esse risco se refere diretamente. Nunca reporte um risco cujo relatedNewDrug não seja um medicamento novo.',
+            },
             conflictingItem: {
               type: 'string',
               description:
-                'Nome do medicamento (para type=interaction) ou da alergia (para type=allergy) que conflita com o novo medicamento.',
+                'Nome do medicamento (para type=interaction) ou da alergia (para type=allergy) que conflita com o medicamento indicado em relatedNewDrug.',
             },
             description: {
               type: 'string',
               description: 'Explicação curta (1-2 frases) do risco, em português, para leigos.',
             },
           },
-          required: ['type', 'severity', 'conflictingItem', 'description'],
+          required: ['type', 'severity', 'relatedNewDrug', 'conflictingItem', 'description'],
         },
       },
     },
@@ -102,7 +113,8 @@ Você vai receber: o novo medicamento sendo cadastrado, a lista de medicamentos 
 Regras:
 - Reporte só riscos em que você tenha confiança razoável, baseados em conhecimento farmacológico real — não invente interações.
 - Considere tanto interação medicamento-medicamento quanto conflito medicamento-alergia (ex.: a pessoa é alérgica a um princípio ativo presente no novo medicamento, ou a uma classe relacionada).
-- Se não houver risco relevante, retorne hasRisk=false e risks vazio — não force um risco de severidade "light" só para preencher.
+- CRÍTICO: todo risco reportado precisa envolver diretamente pelo menos um dos medicamentos NOVOS sendo cadastrados agora (preencha relatedNewDrug com o nome exato desse medicamento novo). NUNCA reporte um risco que existe só entre itens que já estavam cadastrados antes (dois medicamentos já em uso, ou um medicamento já em uso com uma alergia já cadastrada) — isso não é novidade nenhuma pra pessoa e só confunde; esse tipo de conflito já deveria ter sido sinalizado quando esses itens foram cadastrados originalmente.
+- Se não houver risco relevante envolvendo o(s) medicamento(s) novo(s), retorne hasRisk=false e risks vazio — não force um risco de severidade "light" só para preencher, e não reporte um risco só porque existe uma relação genérica na lista de contexto.
 - A descrição deve ser curta, em português, para leigos (não profissionais de saúde), sem jargão desnecessário.
 - Isso é um apoio informativo, não substitui avaliação médica/farmacêutica — não repita esse aviso na sua descrição (a interface já mostra isso separadamente), só reporte o risco em si.
 
@@ -187,5 +199,18 @@ export async function checkMedicationRisk(input: {
     `[medication-risk] Anthropic respondeu em ${elapsedMs}ms hasRisk=${parsed.data.hasRisk} risks=${parsed.data.risks.length} input_tokens=${response.usage.input_tokens} output_tokens=${response.usage.output_tokens}`,
   )
 
-  return { hasRisk: parsed.data.hasRisk, risks: parsed.data.risks, degraded: false }
+  // Não confia só na instrução do prompt — descarta deterministicamente
+  // qualquer risco cujo relatedNewDrug não bata com um dos medicamentos
+  // novos informados, mesmo que a IA tenha ignorado a regra do prompt.
+  const newDrugNamesNormalized = new Set(input.newDrugs.map((d) => normalizeDrugName(d.name)))
+  const risks = parsed.data.risks.filter((risk) =>
+    newDrugNamesNormalized.has(normalizeDrugName(risk.relatedNewDrug)),
+  )
+  if (risks.length !== parsed.data.risks.length) {
+    console.warn(
+      `[medication-risk] Descartados ${parsed.data.risks.length - risks.length} risco(s) cujo relatedNewDrug não bate com nenhum medicamento novo.`,
+    )
+  }
+
+  return { hasRisk: risks.length > 0, risks, degraded: false }
 }

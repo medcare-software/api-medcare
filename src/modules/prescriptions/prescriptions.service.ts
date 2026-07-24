@@ -131,10 +131,10 @@ export const prescriptionsService = {
         activeMedications: context.activeMedications,
         allergies: context.allergies,
       }),
-      checkImsesInteractions([
-        ...input.items.map((item) => item.name),
-        ...context.activeMedications.map((m) => m.name),
-      ]),
+      checkImsesInteractions(
+        input.items.map((item) => item.name),
+        context.activeMedications.map((m) => m.name),
+      ),
     ])
     const result = composeRisk(aiResult, imsesResult)
 
