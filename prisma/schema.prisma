@@ -178,6 +178,7 @@ model User {
   notificationPrefs   NotificationPreference[]
   passwordResetTokens PasswordResetToken[]
   pushTokens          PushToken[]
+  inboxNotifications  InboxNotification[]
   gmailIntegration    GmailIntegration?
 
   @@index([role])
@@ -843,6 +844,25 @@ model PushToken {
 
   @@index([userId])
   @@map("push_tokens")
+}
+
+// Histórico de pushes enviados ao usuário — alimenta a tela de inbox do app.
+model InboxNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String? // espelha data.type do push (ex.: "exam-shared")
+  data      Json      @default("{}")
+  readAt    DateTime?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("inbox_notifications")
 }
 
 // ─────────────────────────────────────────────

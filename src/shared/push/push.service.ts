@@ -1,4 +1,5 @@
 import { Expo, type ExpoPushMessage } from 'expo-server-sdk'
+import type { Prisma } from '@prisma/client'
 
 import { db } from '../../config/database.js'
 
@@ -10,9 +11,28 @@ export type PushPayload = {
   data?: Record<string, unknown>
 }
 
-/** Envia pra todos os devices registrados do usuário — falha de envio não deve
- * derrubar o fluxo principal que a chamou (ex.: registrar dose), só loga. */
+/** Persiste no inbox e envia pra todos os devices do usuário.
+ * Falha de envio Expo não apaga o registro — o usuário ainda vê na tela. */
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+  const type =
+    typeof payload.data?.type === 'string' && payload.data.type.length > 0
+      ? payload.data.type
+      : null
+
+  try {
+    await db.inboxNotification.create({
+      data: {
+        userId,
+        title: payload.title,
+        body: payload.body,
+        type,
+        data: (payload.data ?? {}) as Prisma.InputJsonValue,
+      },
+    })
+  } catch (err) {
+    console.error('[push] falha ao gravar inbox', err)
+  }
+
   const tokens = await db.pushToken.findMany({ where: { userId } })
   const messages: ExpoPushMessage[] = tokens
     .filter((t) => Expo.isExpoPushToken(t.token))

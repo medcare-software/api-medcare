@@ -25,4 +25,28 @@ export const notificationsService = {
   async registerPushToken(user: AuthUser, input: RegisterPushTokenInput) {
     await notificationsRepository.upsertPushToken(user.id, input.token, input.platform)
   },
+
+  async listInbox(user: AuthUser) {
+    return notificationsRepository.findInboxByUserId(user.id)
+  },
+
+  async markInboxRead(user: AuthUser, id: string) {
+    const existing = await notificationsRepository.findInboxByIdScoped(id, user.id)
+    if (!existing) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Notificação não encontrada' })
+    }
+    if (existing.readAt) return
+    await notificationsRepository.markInboxReadScoped(id, user.id)
+  },
+
+  async markAllInboxRead(user: AuthUser) {
+    await notificationsRepository.markAllInboxRead(user.id)
+  },
+
+  async removeInbox(user: AuthUser, id: string) {
+    const result = await notificationsRepository.softDeleteInboxScoped(id, user.id)
+    if (result.count === 0) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Notificação não encontrada' })
+    }
+  },
 }

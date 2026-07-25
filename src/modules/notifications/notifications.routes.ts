@@ -52,4 +52,42 @@ export default async function notificationsRoutes(fastify: FastifyInstance) {
     await notificationsService.registerPushToken(req.user, body.data)
     return reply.status(204).send()
   })
+
+  // GET /notifications/inbox — histórico de pushes do próprio usuário
+  fastify.get('/notifications/inbox', { preHandler: [authenticate] }, async (req, reply) => {
+    const items = await notificationsService.listInbox(req.user)
+    return reply.status(200).send({ data: items })
+  })
+
+  // PATCH /notifications/inbox/:id/read
+  fastify.patch(
+    '/notifications/inbox/:id/read',
+    { preHandler: [authenticate] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      await notificationsService.markInboxRead(req.user, id)
+      return reply.status(204).send()
+    },
+  )
+
+  // POST /notifications/inbox/read-all
+  fastify.post(
+    '/notifications/inbox/read-all',
+    { preHandler: [authenticate] },
+    async (req, reply) => {
+      await notificationsService.markAllInboxRead(req.user)
+      return reply.status(204).send()
+    },
+  )
+
+  // DELETE /notifications/inbox/:id — soft-delete
+  fastify.delete(
+    '/notifications/inbox/:id',
+    { preHandler: [authenticate] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      await notificationsService.removeInbox(req.user, id)
+      return reply.status(204).send()
+    },
+  )
 }
