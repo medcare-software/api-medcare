@@ -13,6 +13,8 @@ export interface JwtPayload {
 export interface RefreshTokenPayload {
   sub: string
   jti: string
+  /** Papel da sessão (portal) — preservado no refresh pra multi-papel no mesmo User. */
+  role?: Role
   /** Quando presente, sessão destinada ao painel web (médico/clínica/admin). */
   aud?: 'web'
   iat?: number
@@ -26,12 +28,18 @@ export interface AuthUser {
   jti: string
 }
 
-// Emitido só por POST /auth/forgot-password/verify, curta duração (ver
-// env.PASSWORD_RESET_SESSION_EXPIRES_IN). Sem `role`, então nunca passa pelo
+// Destino do fluxo que emitiu o token de reset/ativação — a LP/web usam isso
+// pra rotear (app deep link vs portal médico/clínica/admin). Não substitui
+// User.role: a mesma pessoa pode ter vários perfis; o destination é do e-mail.
+export type PasswordResetDestination = 'app' | 'doctor' | 'clinic' | 'admin'
+
+// Emitido por POST /auth/forgot-password/verify e pelos links de ativação.
+// Curta/média duração. Sem `role` no sense de JWT de acesso — nunca passa pelo
 // middleware `authenticate` (que exige sub+role) — não pode virar access token.
 export interface PasswordResetSessionPayload {
   sub: string
   purpose: 'password_reset'
+  destination?: PasswordResetDestination
   iat?: number
   exp?: number
 }

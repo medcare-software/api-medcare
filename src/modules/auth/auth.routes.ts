@@ -69,9 +69,16 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
 
     const user = await authService.validateAndRotateSession(payload.jti)
+    // Preserva o papel da sessão (multi-papel: mesmo User pode ser DOCTOR no web
+    // e PATIENT_ADMIN no app). Tokens antigos sem `role` caem no User.role do banco.
+    const sessionRole = payload.role ?? user.role
     // Preserva o rótulo do dispositivo na rotação (mesma sessão física, só o token muda).
     const deviceLabel = getDeviceLabel(req.headers['user-agent'])
-    const tokens = await issueTokens(fastify, { id: user.id, role: user.role }, { deviceLabel })
+    const tokens = await issueTokens(
+      fastify,
+      { id: user.id, role: sessionRole },
+      { deviceLabel },
+    )
 
     return reply.status(200).send({ data: tokens })
   })
@@ -101,7 +108,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        // Papel da sessão (JWT), não User.role do banco — multi-papel.
+        role: req.user.role,
         phone: user.phone,
         cpf: user.cpfEncrypted ? decryptField(user.cpfEncrypted) : null,
         status: user.status,
@@ -177,8 +185,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         details: body.error.issues,
       })
     }
-    const valid = authService.validateResetSessionToken(fastify, body.data.token)
-    return reply.status(200).send({ data: { valid } })
+    const result = authService.validateResetSessionToken(fastify, body.data.token)
+    return reply.status(200).send({ data: result })
   })
 
   // POST /auth/change-password (requer autenticação) — senha atual + nova, revoga todas as sessões

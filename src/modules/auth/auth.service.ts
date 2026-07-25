@@ -8,7 +8,7 @@ import { env } from '../../config/env.js'
 import { AppError } from '../../shared/errors/index.js'
 import { passwordResetCodeTemplate, sendMail } from '../../shared/mail/index.js'
 import { hashForLookup, onlyDigits, recordAuditEvent } from '../../shared/security/index.js'
-import type { PasswordResetSessionPayload } from '../../shared/types/auth.types.js'
+import type { PasswordResetDestination, PasswordResetSessionPayload } from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
 import { auditLogsRepository } from '../audit-logs/audit-logs.repository.js'
 import { authRepository } from './auth.repository.js'
@@ -18,16 +18,18 @@ const MAX_RESET_CODE_ATTEMPTS = 5
 const LOGIN_AUDIT_THROTTLE_MS = 24 * 60 * 60 * 1000
 
 // Reutilizado tanto pelo fluxo de "esqueci a senha" (após verificar o código)
-// quanto pela ativação de conta de membro familiar (link de e-mail) — mesmo
-// JWT de propósito único, só muda quem emite e o TTL.
+// quanto pela ativação de conta (link de e-mail) — mesmo JWT de propósito único,
+// só muda quem emite, o TTL e o `destination` (roteamento LP/portal).
 export function issuePasswordResetSessionToken(
   fastify: FastifyInstance,
   userId: string,
   expiresIn: string,
+  destination?: PasswordResetDestination,
 ): string {
   const payload: Omit<PasswordResetSessionPayload, 'iat' | 'exp'> = {
     sub: userId,
     purpose: 'password_reset',
+    ...(destination !== undefined && { destination }),
   }
   return fastify.jwt.sign(payload, { expiresIn })
 }
@@ -81,11 +83,17 @@ export const authService = {
     }
 
     if (input.portal === 'app') {
-      const appRoles: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER']
-      if (!appRoles.includes(verifiedUser.role)) {
+      // Só entra no app quem tem FamilyMember — prestador só no web não passa.
+      // Sessão usa papel de app derivado do vínculo (nunca DOCTOR/CLINIC_ADMIN).
+      if (!verifiedUser.familyMember) {
         throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas' })
       }
-      return verifiedUser
+      const appRole: Role = verifiedUser.familyMember.isAdmin
+        ? 'PATIENT_ADMIN'
+        : verifiedUser.role === 'CAREGIVER'
+          ? 'CAREGIVER'
+          : 'FAMILY_MEMBER'
+      return { ...verifiedUser, role: appRole }
     }
 
     // `portal` omitido — compatibilidade retroativa, comportamento anterior.
@@ -95,6 +103,9 @@ export const authService = {
   async validateCrmLogin(input: CrmLoginInput) {
     const user = await authRepository.findUserByCrm(input.crmNumber, input.crmState)
     const verifiedUser = await assertCredentials(user, input.password)
+    if (!verifiedUser.doctor) {
+      throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas' })
+    }
     return { ...verifiedUser, role: 'DOCTOR' as const }
   },
 
@@ -250,6 +261,7 @@ export const authService = {
       fastify,
       user.id,
       env.PASSWORD_RESET_SESSION_EXPIRES_IN,
+      destinationFromUser(user),
     )
     return { resetSessionToken }
   },
@@ -281,12 +293,19 @@ export const authService = {
   // Checagem sem efeito colateral (não consome/revoga nada) — usada pela página
   // https intermediária antes de mostrar a UI de "definir senha" pra um token
   // que pode ter vindo de qualquer lugar, não só de um e-mail real emitido por nós.
-  validateResetSessionToken(fastify: FastifyInstance, token: string): boolean {
+  validateResetSessionToken(
+    fastify: FastifyInstance,
+    token: string,
+  ): { valid: boolean; destination?: PasswordResetDestination } {
     try {
       const payload = fastify.jwt.verify<PasswordResetSessionPayload>(token)
-      return payload.purpose === 'password_reset'
+      if (payload.purpose !== 'password_reset') return { valid: false }
+      return {
+        valid: true,
+        ...(payload.destination !== undefined && { destination: payload.destination }),
+      }
     } catch {
-      return false
+      return { valid: false }
     }
   },
 
@@ -326,4 +345,22 @@ async function assertCredentials<T extends { passwordHash: string; status: strin
     throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas' })
   }
   return user
+}
+
+// Melhor esforço pro OTP de esqueci-senha: se a pessoa tem família no app, o
+// código costuma ser do app; senão usa o perfil web. Fluxos de ativação passam
+// destination explicitamente e não dependem disso.
+function destinationFromUser(user: {
+  role: Role
+  doctor?: unknown
+  clinicAdminProfile?: unknown
+  familyMember?: unknown
+}): PasswordResetDestination | undefined {
+  if (user.familyMember) return 'app'
+  if (user.doctor || user.role === 'DOCTOR') return 'doctor'
+  if (user.clinicAdminProfile || user.role === 'CLINIC_ADMIN') return 'clinic'
+  if (user.role === 'PLATFORM_ADMIN') return 'admin'
+  const appRoles: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER']
+  if (appRoles.includes(user.role)) return 'app'
+  return undefined
 }

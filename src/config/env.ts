@@ -64,23 +64,21 @@ const envSchema = z.object({
   PASSWORD_RESET_SESSION_EXPIRES_IN: z.string().default('5m'),
   PASSWORD_RESET_MAX_REQUESTS_PER_HOUR: z.coerce.number().int().positive().default(5),
   CAREGIVER_INVITE_CODE_TTL_MINUTES: z.coerce.number().int().positive().default(15),
-  // Link de ativação por e-mail (adminFamiliar cria membro com login) — TTL mais
-  // longo que PASSWORD_RESET_SESSION_EXPIRES_IN porque é um link que a pessoa
-  // pode abrir dias depois, não um código digitado na hora.
+  // Link de ativação por e-mail — TTL mais longo que PASSWORD_RESET_SESSION_EXPIRES_IN
+  // porque é um link que a pessoa pode abrir dias depois, não um código digitado na hora.
   FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN: z.string().default('3d'),
-  // Página https intermediária (ver web-medcarelp app/reset-password/page.tsx)
-  // que redireciona para appmedcare://reset-password?token=... — clientes de
-  // e-mail (Outlook etc.) não linkificam/resolvem esquemas customizados
-  // diretamente, então o e-mail sempre aponta pra cá em vez do deep link cru.
+  // Familiar / app: LP intermediária → deep link appmedcare:// (clientes de e-mail
+  // não abrem scheme customizado direto).
   FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL: z
     .string()
     .url()
     .default('https://lp.medcaresw.com/reset-password'),
-  // Link de definição de senha do médico recém-cadastrado — aponta pra própria
-  // web-medcare (portal médico roda no navegador, diferente do member do
-  // app-medcare acima, que é mobile). Setar pra URL real de produção do
-  // web-medcare + /reset-password no ambiente hospedado.
-  DOCTOR_ACTIVATION_LINK_BASE_URL: z.string().url().default('http://localhost:5173/reset-password'),
+  // Médico / clínica / funcionário: portal web — já ficam no mesmo sistema e
+  // após reset vão pro login do papel (destination no JWT).
+  DOCTOR_ACTIVATION_LINK_BASE_URL: z
+    .string()
+    .url()
+    .default('https://www.medcaresw.com/reset-password'),
   MEDICATION_LOW_STOCK_THRESHOLD: z.coerce.number().int().positive().default(5),
   ACCESS_EXPIRING_SOON_DAYS: z.coerce.number().int().positive().default(3),
 

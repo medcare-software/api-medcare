@@ -22,6 +22,7 @@ export async function issueTokens(
   const refreshPayload: RefreshTokenPayload = {
     sub: user.id,
     jti,
+    role: user.role,
     ...(options?.audience === 'web' && { aud: 'web' }),
   }
 

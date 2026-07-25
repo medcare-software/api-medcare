@@ -78,6 +78,7 @@ export const employeesService = {
         fastify,
         employee.userId as string,
         env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+        'admin',
       )
       const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
       const template = employeeActivationLinkTemplate(link, input.name)

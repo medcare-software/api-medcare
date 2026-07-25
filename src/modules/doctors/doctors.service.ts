@@ -117,6 +117,7 @@ export const doctorsService = {
           fastify,
           existingUser.id,
           env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+          'doctor',
         )
         const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
         const template = doctorActivationLinkTemplate(link, input.name)
@@ -157,6 +158,7 @@ export const doctorsService = {
           fastify,
           doctor.user.id,
           env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+          'doctor',
         )
         const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
         const template = doctorActivationLinkTemplate(link, input.name)

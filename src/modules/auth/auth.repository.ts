@@ -4,7 +4,11 @@ export const authRepository = {
   async findUserByEmail(email: string) {
     return db.user.findFirst({
       where: { email: email.toLowerCase(), deletedAt: null },
-      include: { doctor: true, clinicAdminProfile: true },
+      include: {
+        doctor: true,
+        clinicAdminProfile: true,
+        familyMember: { select: { id: true, familyId: true, isAdmin: true } },
+      },
     })
   },
 
@@ -18,7 +22,11 @@ export const authRepository = {
   async findUserByCpfHash(cpfHash: string) {
     return db.user.findFirst({
       where: { cpfHash, deletedAt: null },
-      include: { doctor: true, clinicAdminProfile: true },
+      include: {
+        doctor: true,
+        clinicAdminProfile: true,
+        familyMember: { select: { id: true, familyId: true, isAdmin: true } },
+      },
     })
   },
 
@@ -29,7 +37,7 @@ export const authRepository = {
     if (!clinic) return null
     return db.user.findFirst({
       where: { deletedAt: null, clinicAdminProfile: { clinicId: clinic.id } },
-      include: { doctor: true },
+      include: { doctor: true, clinicAdminProfile: true },
     })
   },
 

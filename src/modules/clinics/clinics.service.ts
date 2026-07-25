@@ -227,6 +227,7 @@ export const clinicsService = {
         fastify,
         activationUserId,
         env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+        'clinic',
       )
       const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
       const template = clinicAdminActivationLinkTemplate(link, input.adminName)
