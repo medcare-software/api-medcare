@@ -1,4 +1,5 @@
 import type { Role } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 import {
   assertActiveMedicalAccessGrant,
@@ -8,6 +9,11 @@ import {
   resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
+import {
+  resolveFamilyAdminUserIds,
+  resolveFamilyIdForMember,
+  sendPushToUser,
+} from '../../shared/push/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { vaccinesRepository } from './vaccines.repository.js'
 import type {
@@ -32,10 +38,24 @@ export const vaccinesService = {
   async create(user: AuthUser, input: CreateVaccineInput) {
     await assertVaccineWriteAccess(user, input.memberId)
     const { memberId, ...data } = input
-    return vaccinesRepository.create(memberId, {
+    const vaccine = await vaccinesRepository.create(memberId, {
       ...data,
       ...(user.role === 'DOCTOR' && { doctorId: await resolveDoctorId(user.id) }),
     })
+
+    if (user.role === 'DOCTOR') {
+      const familyId = await resolveFamilyIdForMember(memberId)
+      const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
+      for (const adminUserId of adminUserIds) {
+        await sendPushToUser(adminUserId, {
+          title: 'Nova vacina recebida',
+          body: `Um médico registrou a vacina "${vaccine.name}".`,
+          data: { type: 'vaccine-shared', vaccineId: vaccine.id, memberId },
+        })
+      }
+    }
+
+    return vaccine
   },
 
   async update(user: AuthUser, id: string, input: UpdateVaccineInput) {
@@ -54,7 +74,20 @@ export const vaccinesService = {
 
   async recordDose(user: AuthUser, vaccineId: string, input: RecordVaccineDoseInput) {
     const vaccine = await getVaccineForWrite(user, vaccineId)
-    const dose = await vaccinesRepository.createDose(vaccine.id, input)
+    let dose
+    try {
+      dose = await vaccinesRepository.createDose(vaccine.id, input)
+    } catch (err) {
+      // Retry após timeout: unique (vaccineId, doseNumber) — devolve a dose já gravada.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const existing = await vaccinesRepository.findDoseByNumber(vaccine.id, input.doseNumber)
+        if (existing) return existing
+      }
+      throw err
+    }
     if (input.nextBoosterAt && input.nextBoosterAt < new Date()) {
       await vaccinesRepository.updateStatus(vaccine.id, 'BOOSTER_DUE')
     }

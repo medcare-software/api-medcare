@@ -44,6 +44,12 @@ export const vaccinesRepository = {
     return db.vaccineDose.create({ data: { vaccineId, ...omitUndefined(input) } })
   },
 
+  findDoseByNumber(vaccineId: string, doseNumber: number) {
+    return db.vaccineDose.findUnique({
+      where: { vaccineId_doseNumber: { vaccineId, doseNumber } },
+    })
+  },
+
   findDosesByVaccineId(vaccineId: string) {
     return db.vaccineDose.findMany({ where: { vaccineId }, orderBy: { appliedAt: 'desc' } })
   },

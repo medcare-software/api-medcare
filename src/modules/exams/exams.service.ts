@@ -129,13 +129,19 @@ async function assertExamWriteAccess(user: AuthUser, memberId: string) {
   throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode registrar exames' })
 }
 
-// Editar exame: FAMILY_MEMBER pode, restrito ao próprio membro (ver resolveOwnScopedMemberIds).
+// Editar exame: família só altera exame MANUAL (criado pelo paciente); demais origens são read-only.
 async function getScopedForUpdate(user: AuthUser, id: string) {
   if (isFamilyRole(user.role)) {
     const memberIds = await resolveOwnScopedMemberIds(user)
     const exam = await examsRepository.findByIdScoped(id, memberIds)
     if (!exam) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Exame não encontrado' })
+    }
+    if (exam.source !== 'MANUAL') {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Só é possível alterar exames adicionados manualmente',
+      })
     }
     return exam
   }
@@ -186,6 +192,12 @@ async function getScopedForDelete(user: AuthUser, id: string) {
     const exam = await examsRepository.findByIdScoped(id, memberIds)
     if (!exam) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Exame não encontrado' })
+    }
+    if (exam.source !== 'MANUAL') {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Só é possível excluir exames adicionados manualmente',
+      })
     }
     return exam
   }

@@ -358,6 +358,7 @@ model MedicationDoseRecord {
 
   medication Medication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
 
+  @@unique([medicationId, scheduledAt])
   @@index([medicationId])
   @@index([scheduledAt])
   @@map("medication_dose_records")
@@ -399,6 +400,7 @@ model VaccineDose {
 
   vaccine Vaccine @relation(fields: [vaccineId], references: [id], onDelete: Cascade)
 
+  @@unique([vaccineId, doseNumber])
   @@index([vaccineId])
   @@map("vaccine_doses")
 }

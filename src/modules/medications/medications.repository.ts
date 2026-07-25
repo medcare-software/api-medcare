@@ -76,6 +76,12 @@ export const medicationsRepository = {
     return db.medicationDoseRecord.create({ data: { medicationId, ...omitUndefined(input) } })
   },
 
+  findDoseRecordByScheduledAt(medicationId: string, scheduledAt: Date) {
+    return db.medicationDoseRecord.findUnique({
+      where: { medicationId_scheduledAt: { medicationId, scheduledAt } },
+    })
+  },
+
   findDoseRecordsByMedicationId(medicationId: string) {
     return db.medicationDoseRecord.findMany({
       where: { medicationId },

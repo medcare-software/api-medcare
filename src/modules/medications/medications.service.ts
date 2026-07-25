@@ -1,4 +1,5 @@
 import type { Role } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 import { env } from '../../config/env.js'
 import {
@@ -96,10 +97,26 @@ export const medicationsService = {
   async recordDose(user: AuthUser, medicationId: string, input: RecordDoseInput) {
     assertFamilyWriter(user)
     const medication = await getScopedOrThrow(user, medicationId)
-    const dose = await medicationsRepository.createDoseRecord(medication.id, {
-      ...input,
-      recordedById: user.id,
-    })
+    let dose
+    try {
+      dose = await medicationsRepository.createDoseRecord(medication.id, {
+        ...input,
+        recordedById: user.id,
+      })
+    } catch (err) {
+      // Retry após timeout: unique (medicationId, scheduledAt) — devolve a dose já gravada.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const existing = await medicationsRepository.findDoseRecordByScheduledAt(
+          medication.id,
+          input.scheduledAt,
+        )
+        if (existing) return existing
+      }
+      throw err
+    }
 
     if (
       input.state === 'TAKEN' &&
