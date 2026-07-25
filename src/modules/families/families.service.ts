@@ -51,14 +51,34 @@ export const familiesService = {
       familiesRepository.findUserByCpfHash(cpfHash),
       bcrypt.hash(input.password, env.BCRYPT_ROUNDS),
     ])
-    if (existingEmail) {
+
+    if (existingEmail?.familyMember) {
       throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
     }
-    if (existingCpf) {
+    if (existingCpf?.familyMember) {
       throw new AppError({ code: 'CONFLICT', message: 'CPF já cadastrado' })
     }
+    if (existingEmail && existingCpf && existingEmail.id !== existingCpf.id) {
+      throw new AppError({
+        code: 'CONFLICT',
+        message: 'CPF e e-mail informados pertencem a cadastros diferentes',
+      })
+    }
+    if (existingCpf && !existingEmail) {
+      // CPF de prestador sem o e-mail informado — não troca e-mail silenciosamente.
+      throw new AppError({ code: 'CONFLICT', message: 'CPF já cadastrado' })
+    }
+    if (
+      existingEmail?.cpfHash &&
+      existingEmail.cpfHash !== cpfHash
+    ) {
+      throw new AppError({
+        code: 'CONFLICT',
+        message: 'Este e-mail já está vinculado a outro CPF',
+      })
+    }
 
-    const { user } = await familiesRepository.createFamilyWithAdmin({
+    const adminData = {
       email: input.email,
       passwordHash,
       ...(input.phone !== undefined && { phone: input.phone }),
@@ -71,8 +91,18 @@ export const familiesService = {
       displayName: input.displayName,
       birthDate: input.birthDate,
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
-    })
+    }
 
+    // Prestador (médico/clínica) sem família no app — vira admin familiar no mesmo User.
+    if (existingEmail && !existingEmail.familyMember) {
+      const { user } = await familiesRepository.createFamilyWithExistingAdmin(
+        existingEmail.id,
+        adminData,
+      )
+      return user
+    }
+
+    const { user } = await familiesRepository.createFamilyWithAdmin(adminData)
     return user
   },
 
@@ -171,20 +201,29 @@ export const familiesService = {
       ...cpfFields,
     }
 
-    // Promoção/rebaixamento de admin só tem efeito real se User.role acompanhar
-    // isAdmin — a autorização de escrita em todo o backend é decidida por role
-    // (JWT), não por isAdmin, que sozinho é só uma flag informativa. Sem User
-    // próprio (dependente sem login) não há role pra sincronizar.
+    // Promoção/rebaixamento de admin: sincroniza User.role só em contas só-app.
+    // Prestador (Doctor/ClinicAdmin) mantém role no banco; login portal=app
+    // deriva PATIENT_ADMIN/FAMILY_MEMBER do isAdmin do FamilyMember.
     const isAdminChange = input.isAdmin !== undefined && input.isAdmin !== member.isAdmin
-    const updated =
-      isAdminChange && member.userId
-        ? await familiesRepository.updateMemberAndRole(
+    let updated
+    if (isAdminChange && member.userId) {
+      const linked = await familiesRepository.findUserById(member.userId)
+      const isProvider =
+        !!linked?.doctor ||
+        !!linked?.clinicAdminProfile ||
+        linked?.role === 'DOCTOR' ||
+        linked?.role === 'CLINIC_ADMIN'
+      updated = isProvider
+        ? await familiesRepository.updateMember(id, memberData)
+        : await familiesRepository.updateMemberAndRole(
             id,
             member.userId,
             memberData,
             input.isAdmin ? 'PATIENT_ADMIN' : 'FAMILY_MEMBER',
           )
-        : await familiesRepository.updateMember(id, memberData)
+    } else {
+      updated = await familiesRepository.updateMember(id, memberData)
+    }
 
     if (isAdminChange && member.userId) {
       await sendPushToUser(member.userId, {
@@ -246,24 +285,19 @@ async function createMemberWithLogin(
   const cpfDigits = onlyDigits(input.cpf)
   const cpfHash = hashForLookup(cpfDigits)
 
-  // Três fontes de colisão possíveis: User por e-mail, User por CPF (qualquer
-  // role — admin, membro, cuidador, médico...), e FamilyMember por CPF sem User
-  // vinculado (dependente sem login). As duas primeiras cobrem "já é uma conta
-  // no sistema"; a terceira é o caso que resolveCpfFields já cobre no fluxo sem
-  // e-mail e que precisa ser replicado aqui — sem ela a colisão só aparece como
-  // um P2002 cru na escrita de FamilyMember dentro de createMemberWithUser.
   const [existingEmail, existingCpfUser, existingCpfMember] = await Promise.all([
     familiesRepository.findUserByEmail(input.email),
     familiesRepository.findUserByCpfHash(cpfHash),
     familiesRepository.findMemberByCpfHash(cpfHash),
   ])
-  if (existingEmail) {
+
+  if (existingEmail?.familyMember) {
     throw new AppError({
       code: 'CONFLICT',
       message: conflictMessage(familyId, existingEmail.familyMember, 'e-mail'),
     })
   }
-  if (existingCpfUser) {
+  if (existingCpfUser?.familyMember) {
     throw new AppError({
       code: 'CONFLICT',
       message: conflictMessage(familyId, existingCpfUser.familyMember, 'CPF'),
@@ -275,6 +309,44 @@ async function createMemberWithLogin(
       message: conflictMessage(familyId, existingCpfMember, 'CPF'),
     })
   }
+  if (existingEmail && existingCpfUser && existingEmail.id !== existingCpfUser.id) {
+    throw new AppError({
+      code: 'CONFLICT',
+      message: 'CPF e e-mail informados pertencem a cadastros diferentes',
+    })
+  }
+  if (existingCpfUser && !existingEmail) {
+    throw new AppError({
+      code: 'CONFLICT',
+      message: conflictMessage(familyId, existingCpfUser.familyMember, 'CPF'),
+    })
+  }
+  if (existingEmail?.cpfHash && existingEmail.cpfHash !== cpfHash) {
+    throw new AppError({
+      code: 'CONFLICT',
+      message: 'Este e-mail já está vinculado a outro CPF',
+    })
+  }
+
+  const memberFields = {
+    fullNameEncrypted: encryptField(input.fullName),
+    displayName: input.displayName,
+    relationship: input.relationship,
+    birthDate: input.birthDate,
+    ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
+    cpfEncrypted: encryptField(cpfDigits),
+    cpfHash,
+  }
+
+  // Prestador sem FamilyMember — anexa à família; senha já existe, sem e-mail de ativação.
+  if (existingEmail && !existingEmail.familyMember) {
+    const member = await familiesRepository.createMemberForExistingUser(
+      familyId,
+      existingEmail.id,
+      memberFields,
+    )
+    return { ...toMemberDetail(member, user.role), activationEmailSent: true as const }
+  }
 
   // Senha inutilizável — só existe para satisfazer a constraint NOT NULL até o
   // membro definir a senha real pelo link de ativação. Nunca logada/exposta.
@@ -284,35 +356,38 @@ async function createMemberWithLogin(
   const { user: newUser, member } = await familiesRepository.createMemberWithUser(familyId, {
     email: input.email,
     passwordHash,
-    fullNameEncrypted: encryptField(input.fullName),
-    displayName: input.displayName,
-    relationship: input.relationship,
-    birthDate: input.birthDate,
-    ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
-    cpfEncrypted: encryptField(cpfDigits),
-    cpfHash,
+    ...memberFields,
   })
 
   const activationToken = issuePasswordResetSessionToken(
     fastify,
     newUser.id,
     env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
+    'app',
   )
   const link = `${env.FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
   const template = familyMemberActivationLinkTemplate(link, input.displayName)
 
-  // Membro/User já persistidos — falha de SMTP não pode derrubar o create nem
-  // deixar o app em "Sem conexão" por timeout. Reenvio pode ser feito depois.
+  let activationEmailSent = true
   try {
     await sendMail({ to: newUser.email, ...template })
   } catch (err) {
+    activationEmailSent = false
+    const cause = err instanceof Error ? err.message : String(err)
     fastify.log.error(
       { err, userId: newUser.id, email: newUser.email },
       'Falha ao enviar e-mail de ativação do membro familiar',
     )
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'FAMILY_MEMBER_ACTIVATION_EMAIL_FAILED',
+      targetType: 'FamilyMember',
+      targetId: member.id,
+      metadata: { email: newUser.email, error: cause },
+    })
   }
 
-  return toMemberDetail(member, user.role)
+  return { ...toMemberDetail(member, user.role), activationEmailSent }
 }
 
 // Mensagem de conflito contextual: diferencia "já é membro desta família" (erro

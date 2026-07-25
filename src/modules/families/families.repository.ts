@@ -50,13 +50,16 @@ type UpsertHealthProfileData = {
 }
 
 export const familiesRepository = {
-  // Inclui familyMember (familyId/isAdmin) para permitir mensagem de conflito
-  // contextual em createMemberWithLogin — quem só checa truthiness (registerAdmin)
-  // não é afetado por isso.
+  // Inclui familyMember + perfis web para createMemberWithLogin/registerAdmin
+  // saberem anexar FamilyMember a prestador existente (mesmo e-mail).
   findUserByEmail(email: string) {
-    return db.user.findUnique({
+    return db.user.findFirst({
       where: { email: email.toLowerCase(), deletedAt: null },
-      include: { familyMember: { select: { familyId: true, isAdmin: true } } },
+      include: {
+        familyMember: { select: { familyId: true, isAdmin: true } },
+        doctor: { select: { id: true } },
+        clinicAdminProfile: { select: { id: true } },
+      },
     })
   },
 
@@ -64,9 +67,13 @@ export const familiesRepository = {
   // User quanto em FamilyMember, e sem essa checagem uma colisão vira um 500 cru
   // (P2002) em vez de um 409 CONFLICT tratado.
   findUserByCpfHash(cpfHash: string) {
-    return db.user.findUnique({
+    return db.user.findFirst({
       where: { cpfHash, deletedAt: null },
-      include: { familyMember: { select: { familyId: true, isAdmin: true } } },
+      include: {
+        familyMember: { select: { familyId: true, isAdmin: true } },
+        doctor: { select: { id: true } },
+        clinicAdminProfile: { select: { id: true } },
+      },
     })
   },
 
@@ -113,6 +120,63 @@ export const familiesRepository = {
       })
 
       return { user, family, member }
+    })
+  },
+
+  // Prestador (médico/clínica) sem FamilyMember se registra no app como admin
+  // familiar — anexa Family + FamilyMember ao User existente (e-mail @unique).
+  // Não altera User.role (continua DOCTOR/CLINIC_ADMIN no banco); o login
+  // portal=app deriva PATIENT_ADMIN do isAdmin do member.
+  createFamilyWithExistingAdmin(
+    userId: string,
+    input: Omit<CreateFamilyWithAdminData, 'email'> & { passwordHash: string },
+  ) {
+    return db.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: omitUndefined({
+          passwordHash: input.passwordHash,
+          phone: input.phone,
+          state: input.state,
+          city: input.city,
+          cpfEncrypted: input.cpfEncrypted,
+          cpfHash: input.cpfHash,
+          name: input.fullName,
+        }),
+      })
+
+      const family = await tx.family.create({
+        data: { name: familyNameFromFullName(input.fullName) },
+      })
+
+      const member = await tx.familyMember.create({
+        data: omitUndefined({
+          familyId: family.id,
+          userId: user.id,
+          fullNameEncrypted: input.fullNameEncrypted,
+          displayName: input.displayName,
+          relationship: 'Você',
+          birthDate: input.birthDate,
+          biologicalSex: input.biologicalSex,
+          cpfEncrypted: input.cpfEncrypted,
+          cpfHash: input.cpfHash,
+          isAdmin: true,
+        }),
+      })
+
+      return { user, family, member }
+    })
+  },
+
+  findUserById(id: string) {
+    return db.user.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        id: true,
+        role: true,
+        doctor: { select: { id: true } },
+        clinicAdminProfile: { select: { id: true } },
+      },
     })
   },
 
@@ -179,6 +243,43 @@ export const familiesRepository = {
     })
   },
 
+  // Anexa FamilyMember a User prestador existente (sem familyMember) — não cria
+  // segundo User. User.role no banco permanece; login portal=app deriva o papel.
+  createMemberForExistingUser(
+    familyId: string,
+    userId: string,
+    input: Omit<CreateFamilyMemberWithUserData, 'email' | 'passwordHash'>,
+  ) {
+    return db.$transaction(async (tx) => {
+      // Preenche CPF no User se ainda não tinha (médico cadastrado só com CRM).
+      await tx.user.update({
+        where: { id: userId },
+        data: omitUndefined({
+          cpfEncrypted: input.cpfEncrypted,
+          cpfHash: input.cpfHash,
+          name: input.displayName,
+        }),
+      })
+
+      const member = await tx.familyMember.create({
+        data: omitUndefined({
+          familyId,
+          userId,
+          fullNameEncrypted: input.fullNameEncrypted,
+          displayName: input.displayName,
+          relationship: input.relationship,
+          birthDate: input.birthDate,
+          biologicalSex: input.biologicalSex,
+          cpfEncrypted: input.cpfEncrypted,
+          cpfHash: input.cpfHash,
+        }),
+        include: { healthProfile: true },
+      })
+
+      return member
+    })
+  },
+
   updateMember(id: string, data: UpdateFamilyMemberData) {
     return db.familyMember.update({
       where: { id },
@@ -202,24 +303,46 @@ export const familiesRepository = {
     })
   },
 
-  // Soft-delete do FamilyMember é sempre seguro (evita cascatear a exclusão para
-  // Medication/Vaccine/Exam/etc.); quando o membro tem login próprio (userId),
-  // desativa o User junto e revoga sessões — mesmo padrão de doctors.repository.ts#deactivateTx —
-  // e renomeia email/cpfHash pra liberar os @unique (findUserByEmail filtra
-  // deletedAt, mas user.create ainda estoura P2002 se o e-mail original ficar).
+  // Soft-delete do FamilyMember. Se o User só existe pro app, desativa a conta.
+  // Se ainda é prestador (Doctor/ClinicAdmin), só remove o vínculo familiar —
+  // o portal web continua funcionando com o mesmo e-mail.
   softDeleteMember(id: string, userId: string | null) {
     const now = new Date()
     if (!userId) {
       return db.familyMember.update({
         where: { id },
-        data: { deletedAt: now, cpfHash: null },
+        data: { deletedAt: now, cpfHash: null, userId: null },
       })
     }
     return db.$transaction(async (tx) => {
       await tx.familyMember.update({
         where: { id },
-        data: { deletedAt: now, cpfHash: null },
+        data: { deletedAt: now, cpfHash: null, userId: null },
       })
+
+      const linked = await tx.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        include: {
+          doctor: { select: { id: true } },
+          clinicAdminProfile: { select: { id: true } },
+        },
+      })
+      const isProvider =
+        !!linked?.doctor ||
+        !!linked?.clinicAdminProfile ||
+        linked?.role === 'DOCTOR' ||
+        linked?.role === 'CLINIC_ADMIN'
+
+      if (isProvider) {
+        // Revoga só sessões de app na prática é difícil sem aud no refresh —
+        // revoga todas; o prestador faz login de novo no web.
+        await tx.refreshToken.updateMany({
+          where: { userId, revoked: false },
+          data: { revoked: true, revokedAt: now },
+        })
+        return
+      }
+
       await tx.user.update({
         where: { id: userId },
         data: {

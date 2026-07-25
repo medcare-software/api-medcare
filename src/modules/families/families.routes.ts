@@ -35,12 +35,14 @@ export default async function familiesRoutes(fastify: FastifyInstance) {
     }
 
     const user = await familiesService.registerAdmin(body.data)
-    const tokens = await issueTokens(fastify, { id: user.id, role: user.role })
+    // Register sempre cria admin familiar — sessão do app é PATIENT_ADMIN mesmo
+    // quando o User no banco é prestador (Doctor/ClinicAdmin) com FamilyMember anexado.
+    const tokens = await issueTokens(fastify, { id: user.id, role: 'PATIENT_ADMIN' })
 
     return reply.status(201).send({
       data: {
         ...tokens,
-        user: { id: user.id, email: user.email, role: user.role },
+        user: { id: user.id, email: user.email, role: 'PATIENT_ADMIN' as const },
       },
     })
   })
