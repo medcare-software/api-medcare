@@ -83,12 +83,25 @@ export default async function medicationsRoutes(fastify: FastifyInstance) {
   )
 
   // DELETE /medications/:id — soft, seta active: false
+  // Motivo pode vir no body JSON ou em `?reason=` — no React Native o body de
+  // DELETE às vezes é descartado pelo XHR, o que fazia a exclusão falhar em
+  // silêncio no app (botão "Excluindo..." sem efeito).
   fastify.delete(
     '/medications/:id',
     { preHandler: [authenticate, authorize(...MEDICATION_DELETERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      const body = DeactivateMedicationSchema.safeParse(req.body ?? {})
+      const bodyReason =
+        req.body && typeof req.body === 'object' && 'reason' in req.body
+          ? (req.body as { reason?: unknown }).reason
+          : undefined
+      const queryReason =
+        req.query && typeof req.query === 'object' && 'reason' in req.query
+          ? (req.query as { reason?: unknown }).reason
+          : undefined
+      const body = DeactivateMedicationSchema.safeParse({
+        reason: bodyReason ?? queryReason,
+      })
       if (!body.success) {
         return reply.status(400).send({
           code: 'VALIDATION_ERROR',
