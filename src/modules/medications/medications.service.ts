@@ -1,6 +1,7 @@
 import type { Role } from '@prisma/client'
 import { Prisma } from '@prisma/client'
 
+import { db } from '../../config/database.js'
 import { env } from '../../config/env.js'
 import {
   assertClinicalReadAccess,
@@ -11,6 +12,7 @@ import { AppError } from '../../shared/errors/index.js'
 import {
   notifyMedicationRiskAcknowledged,
   resolveFamilyAdminUserIds,
+  resolveFamilyCaregiverUserIds,
   resolveFamilyIdForMember,
   sendPushToUser,
 } from '../../shared/push/index.js'
@@ -38,12 +40,12 @@ export const medicationsService = {
 
   async create(user: AuthUser, input: CreateMedicationInput, idempotencyKey?: string) {
     assertFamilyWriter(user)
-    await assertOwnScopedMemberInScope(user, input.memberId)
+    await assertCanManageMedicationCatalog(user, input.memberId)
 
     if (idempotencyKey) {
       const existing = await medicationsRepository.findByIdempotencyKey(idempotencyKey)
       if (existing) {
-        await assertOwnScopedMemberInScope(user, existing.memberId)
+        await assertCanManageMedicationCatalog(user, existing.memberId)
         return existing
       }
     }
@@ -76,6 +78,7 @@ export const medicationsService = {
   async update(user: AuthUser, id: string, input: UpdateMedicationInput) {
     assertFamilyWriter(user)
     const medication = await getScopedOrThrow(user, id)
+    await assertCanManageMedicationCatalog(user, medication.memberId)
     const updated = await medicationsRepository.update(medication.id, input)
     // Reabasteceu acima do limite — libera o próximo aviso de estoque baixo.
     if (
@@ -91,6 +94,7 @@ export const medicationsService = {
   async deactivate(user: AuthUser, id: string, reason: string) {
     assertFamilyDeleter(user)
     const medication = await getScopedOrThrow(user, id)
+    await assertCanManageMedicationCatalog(user, medication.memberId)
     await medicationsRepository.deactivate(medication.id, reason)
   },
 
@@ -130,9 +134,15 @@ export const medicationsService = {
 
       if (crossedThreshold) {
         const familyId = await resolveFamilyIdForMember(medication.memberId)
-        const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
-        for (const adminUserId of adminUserIds) {
-          await sendPushToUser(adminUserId, {
+        const [adminUserIds, caregiverUserIds] = familyId
+          ? await Promise.all([
+              resolveFamilyAdminUserIds(familyId),
+              resolveFamilyCaregiverUserIds(familyId),
+            ])
+          : [[], []]
+        const recipientIds = [...new Set([...adminUserIds, ...caregiverUserIds])]
+        for (const recipientId of recipientIds) {
+          await sendPushToUser(recipientId, {
             title: 'Estoque acabando',
             body: `${medication.name} está acabando (${newStock} restante${newStock === 1 ? '' : 's'}).`,
             data: {
@@ -171,6 +181,35 @@ function assertFamilyWriter(user: AuthUser) {
   if (!FAMILY_WRITER_ROLES.includes(user.role)) {
     throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não pode gerenciar medicações' })
   }
+}
+
+/** Cadastro/edição/exclusão: só na família própria (FamilyMember). CaregiverAccess → só dose. */
+async function assertCanManageMedicationCatalog(user: AuthUser, memberId: string) {
+  await assertOwnScopedMemberInScope(user, memberId)
+
+  const [ownFamily, target] = await Promise.all([
+    db.familyMember.findUnique({
+      where: { userId: user.id },
+      select: { familyId: true },
+    }),
+    db.familyMember.findUnique({
+      where: { id: memberId },
+      select: { familyId: true },
+    }),
+  ])
+
+  if (!target) {
+    throw new AppError({ code: 'NOT_FOUND', message: 'Registro não encontrado' })
+  }
+
+  if (ownFamily?.familyId === target.familyId) {
+    return
+  }
+
+  throw new AppError({
+    code: 'FORBIDDEN',
+    message: 'Cuidador não pode cadastrar medicamentos',
+  })
 }
 
 function assertFamilyDeleter(user: AuthUser) {
