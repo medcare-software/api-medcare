@@ -71,7 +71,7 @@ export async function sendMail(input: SendMailInput): Promise<void> {
       text: input.text,
     })
     console.warn(
-      `[mail] SMTP resposta: ${info.response} | accepted: ${JSON.stringify(info.accepted)} | rejected: ${JSON.stringify(info.rejected)} | messageId: ${info.messageId}`,
+      `[mail] SMTP resposta: ${info.response} | to: ${input.to} | subject: ${JSON.stringify(input.subject)} | accepted: ${JSON.stringify(info.accepted)} | rejected: ${JSON.stringify(info.rejected)} | messageId: ${info.messageId}`,
     )
     if (info.rejected && info.rejected.length > 0) {
       throw new Error(`Destinatário rejeitado pelo SMTP: ${info.rejected.join(', ')}`)

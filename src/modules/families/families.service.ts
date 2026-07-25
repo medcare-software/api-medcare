@@ -345,7 +345,7 @@ async function createMemberWithLogin(
       existingEmail.id,
       memberFields,
     )
-    return { ...toMemberDetail(member, user.role), activationEmailSent: true as const }
+    return { ...toMemberDetail(member, user.role), activationEmailSent: false as const }
   }
 
   // Senha inutilizável — só existe para satisfazer a constraint NOT NULL até o
