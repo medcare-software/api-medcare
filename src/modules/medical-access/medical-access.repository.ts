@@ -21,7 +21,12 @@ export const medicalAccessRepository = {
   },
 
   findByCodeHash(codeHash: string) {
-    return db.medicalAccessGrant.findUnique({ where: { codeHash } })
+    return db.medicalAccessGrant.findUnique({
+      where: { codeHash },
+      include: {
+        member: { select: { id: true, familyId: true, displayName: true } },
+      },
+    })
   },
 
   activate(id: string, data: ActivateGrantData) {

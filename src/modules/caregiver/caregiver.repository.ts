@@ -46,15 +46,20 @@ export const caregiverRepository = {
     return db.caregiverAccess.findFirst({ where: { caregiverId, familyId } })
   },
 
-  activateCaregiverAccess(caregiverId: string, familyId: string, existingId?: string) {
+  activateCaregiverAccess(
+    caregiverId: string,
+    familyId: string,
+    existingId?: string,
+    expiresAt: Date | null = null,
+  ) {
     if (existingId) {
       return db.caregiverAccess.update({
         where: { id: existingId },
-        data: { status: 'ACTIVE', grantedAt: new Date(), expiresAt: null, revokedAt: null },
+        data: { status: 'ACTIVE', grantedAt: new Date(), expiresAt, revokedAt: null },
       })
     }
     return db.caregiverAccess.create({
-      data: { caregiverId, familyId, status: 'ACTIVE', grantedAt: new Date() },
+      data: { caregiverId, familyId, status: 'ACTIVE', grantedAt: new Date(), expiresAt },
     })
   },
 

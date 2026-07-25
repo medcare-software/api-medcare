@@ -7,6 +7,8 @@ import { caregiverInviteCodeTemplate, sendMail } from '../../shared/mail/index.j
 import { sendPushToUser } from '../../shared/push/index.js'
 import { hashForLookup } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
+import { findValidGrantByCode } from '../medical-access/find-valid-grant-by-code.js'
+import { medicalAccessRepository } from '../medical-access/medical-access.repository.js'
 import { caregiverRepository } from './caregiver.repository.js'
 import type { CreateCaregiverInviteInput, RedeemCaregiverInviteInput } from './caregiver.schema.js'
 
@@ -39,8 +41,6 @@ export const caregiverService = {
     )
     await sendMail({ to: invite.email, ...template })
 
-    // Confirmação pra quem concedeu — aqui já se sabe o e-mail do destinatário
-    // (diferente do medical-access, que é anônimo até o resgate).
     await sendPushToUser(user.id, {
       title: 'Acesso concedido',
       body: `Convite de cuidador enviado para ${invite.email}.`,
@@ -67,34 +67,17 @@ export const caregiverService = {
     await caregiverRepository.revokeInvite(invite.id)
   },
 
-  // Resgatado pelo cuidador autenticado — não exige que o e-mail do convite bata
-  // com o e-mail da conta, mesmo padrão do medical-access (o código já é o segredo).
+  /**
+   * Código unificado: convite legado (e-mail) OU MedicalAccessGrant gerado em Acessos.
+   * Uso único — consumir o grant impede reuso pelo médico/clínica.
+   */
   async redeem(user: AuthUser, input: RedeemCaregiverInviteInput) {
     const codeHash = hashForLookup(input.code)
     const invite = await caregiverRepository.findInviteByCodeHash(codeHash)
-    if (!invite) {
-      throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
+    if (invite) {
+      return redeemLegacyInvite(user, invite)
     }
-    if (invite.status === 'ACTIVE' || invite.status === 'REVOKED') {
-      throw new AppError({ code: 'CONFLICT', message: 'Código já utilizado ou revogado' })
-    }
-    if (invite.status === 'EXPIRED' || invite.expiresAt < new Date()) {
-      if (invite.status !== 'EXPIRED') {
-        await caregiverRepository.markInviteExpired(invite.id)
-      }
-      throw new AppError({ code: 'ACCESS_CODE_EXPIRED', message: 'Código expirado' })
-    }
-
-    const existingAccess = await caregiverRepository.findCaregiverAccess(user.id, invite.familyId)
-    await caregiverRepository.activateCaregiverAccess(user.id, invite.familyId, existingAccess?.id)
-    const redeemed = await caregiverRepository.markInviteRedeemed(invite.id)
-
-    const family = await caregiverRepository.findFamilyById(invite.familyId)
-    return {
-      familyId: invite.familyId,
-      familyName: family?.name ?? '',
-      expiresAt: redeemed.expiresAt,
-    }
+    return redeemMedicalGrantAsCaregiver(user, input.code)
   },
 
   async listMyFamilies(user: AuthUser) {
@@ -106,6 +89,70 @@ export const caregiverService = {
       expiresAt: access.expiresAt,
     }))
   },
+}
+
+async function redeemLegacyInvite(
+  user: AuthUser,
+  invite: {
+    id: string
+    familyId: string
+    status: string
+    expiresAt: Date
+  },
+) {
+  if (invite.status === 'ACTIVE' || invite.status === 'REVOKED') {
+    throw new AppError({ code: 'CONFLICT', message: 'Código já utilizado ou revogado' })
+  }
+  if (invite.status === 'EXPIRED' || invite.expiresAt < new Date()) {
+    if (invite.status !== 'EXPIRED') {
+      await caregiverRepository.markInviteExpired(invite.id)
+    }
+    throw new AppError({ code: 'ACCESS_CODE_EXPIRED', message: 'Código expirado' })
+  }
+
+  const existingAccess = await caregiverRepository.findCaregiverAccess(user.id, invite.familyId)
+  const access = await caregiverRepository.activateCaregiverAccess(
+    user.id,
+    invite.familyId,
+    existingAccess?.id,
+    null,
+  )
+  await caregiverRepository.markInviteRedeemed(invite.id)
+
+  const family = await caregiverRepository.findFamilyById(invite.familyId)
+  return {
+    familyId: invite.familyId,
+    familyName: family?.name ?? '',
+    expiresAt: access.expiresAt,
+  }
+}
+
+async function redeemMedicalGrantAsCaregiver(user: AuthUser, code: string) {
+  const grant = await findValidGrantByCode(code)
+  const familyId = grant.member.familyId
+
+  const temporaryDays = grant.temporaryDays ?? env.MEDICAL_ACCESS_TEMPORARY_GRANT_DAYS
+  const accessExpiresAt =
+    grant.validity === 'PERMANENT'
+      ? null
+      : new Date(Date.now() + temporaryDays * 24 * 60 * 60_000)
+
+  const existingAccess = await caregiverRepository.findCaregiverAccess(user.id, familyId)
+  const access = await caregiverRepository.activateCaregiverAccess(
+    user.id,
+    familyId,
+    existingAccess?.id,
+    accessExpiresAt,
+  )
+  // Consome o código — médico/clínica não pode reutilizar.
+  await medicalAccessRepository.revoke(grant.id)
+
+  const family = await caregiverRepository.findFamilyById(familyId)
+  return {
+    familyId,
+    familyName: family?.name ?? '',
+    expiresAt: access.expiresAt,
+  }
 }
 
 function assertFamilyAdmin(user: AuthUser) {
