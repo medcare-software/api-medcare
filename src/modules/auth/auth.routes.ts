@@ -117,6 +117,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
               id: user.familyMember.id,
               familyId: user.familyMember.familyId,
               isAdmin: user.familyMember.isAdmin,
+              familyName: user.familyMember.family?.name ?? null,
             }
           : null,
       },

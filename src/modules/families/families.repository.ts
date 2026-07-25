@@ -1,7 +1,7 @@
 import type { BiologicalSex, Role } from '@prisma/client'
 
 import { db } from '../../config/database.js'
-import { omitUndefined } from '../../shared/utils/index.js'
+import { familyNameFromFullName, omitUndefined } from '../../shared/utils/index.js'
 
 type CreateFamilyWithAdminData = {
   email: string
@@ -12,6 +12,8 @@ type CreateFamilyWithAdminData = {
   cpfEncrypted: Buffer<ArrayBuffer>
   cpfHash: string
   fullNameEncrypted: Buffer<ArrayBuffer>
+  /** Nome completo em claro — usado só para derivar Family.name (não é persistido). */
+  fullName: string
   displayName: string
   birthDate: Date
   biologicalSex?: BiologicalSex
@@ -78,7 +80,7 @@ export const familiesRepository = {
     return db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: omitUndefined({
-          name: input.displayName,
+          name: input.fullName,
           email: input.email.toLowerCase(),
           passwordHash: input.passwordHash,
           role: 'PATIENT_ADMIN',
@@ -92,7 +94,7 @@ export const familiesRepository = {
       })
 
       const family = await tx.family.create({
-        data: { name: `Família de ${input.displayName}` },
+        data: { name: familyNameFromFullName(input.fullName) },
       })
 
       const member = await tx.familyMember.create({

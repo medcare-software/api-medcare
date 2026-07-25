@@ -67,6 +67,7 @@ export const familiesService = {
       cpfEncrypted: encryptField(cpfDigits),
       cpfHash,
       fullNameEncrypted: encryptField(input.fullName),
+      fullName: input.fullName,
       displayName: input.displayName,
       birthDate: input.birthDate,
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),

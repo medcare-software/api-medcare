@@ -40,7 +40,14 @@ export const authRepository = {
         doctor: true,
         // Só o suficiente pra o client saber o próprio memberId (necessário pra
         // completar o registro com o health-profile) — nunca o registro inteiro aqui.
-        familyMember: { select: { id: true, familyId: true, isAdmin: true } },
+        familyMember: {
+          select: {
+            id: true,
+            familyId: true,
+            isAdmin: true,
+            family: { select: { name: true } },
+          },
+        },
       },
     })
   },
