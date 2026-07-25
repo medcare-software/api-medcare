@@ -70,7 +70,9 @@ export async function sendMail(input: SendMailInput): Promise<void> {
       html: input.html,
       text: input.text,
     })
-    console.warn(
+    // console.log (não warn): em plataformas como Railway, warn/stderr vira severity=error
+    // e parece falha mesmo com 250 OK.
+    console.log(
       `[mail] SMTP resposta: ${info.response} | to: ${input.to} | subject: ${JSON.stringify(input.subject)} | accepted: ${JSON.stringify(info.accepted)} | rejected: ${JSON.stringify(info.rejected)} | messageId: ${info.messageId}`,
     )
     if (info.rejected && info.rejected.length > 0) {

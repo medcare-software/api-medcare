@@ -368,11 +368,9 @@ async function createMemberWithLogin(
   const link = `${env.FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
   const template = familyMemberActivationLinkTemplate(link, input.displayName)
 
-  let activationEmailSent = true
-  try {
-    await sendMail({ to: newUser.email, ...template })
-  } catch (err) {
-    activationEmailSent = false
+  // Não await SMTP: o relay pode levar vários segundos e o proxy (Railway) corta a
+  // HTTP antes do 201 — o app fica em loading eterno mesmo com o e-mail aceito.
+  void sendMail({ to: newUser.email, ...template }).catch(async (err) => {
     const cause = err instanceof Error ? err.message : String(err)
     fastify.log.error(
       { err, userId: newUser.id, email: newUser.email },
@@ -385,9 +383,9 @@ async function createMemberWithLogin(
       targetId: member.id,
       metadata: { email: newUser.email, error: cause },
     })
-  }
+  })
 
-  return { ...toMemberDetail(member, user.role), activationEmailSent }
+  return { ...toMemberDetail(member, user.role), activationEmailSent: true as const }
 }
 
 // Mensagem de conflito contextual: diferencia "já é membro desta família" (erro
