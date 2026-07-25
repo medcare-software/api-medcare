@@ -46,6 +46,50 @@ export default async function caregiverRoutes(fastify: FastifyInstance) {
     },
   )
 
+  // DELETE /families/:familyId/caregiver-invites/:id
+  fastify.delete(
+    '/families/:familyId/caregiver-invites/:id',
+    { preHandler: [authenticate, authorize('PATIENT_ADMIN')] },
+    async (req, reply) => {
+      const { familyId, id } = req.params as { familyId: string; id: string }
+      await caregiverService.deleteInvite(req.user, familyId, id)
+      return reply.status(204).send()
+    },
+  )
+
+  // GET /families/:familyId/caregiver-accesses — acessos resgatados (CaregiverAccess)
+  fastify.get(
+    '/families/:familyId/caregiver-accesses',
+    { preHandler: [authenticate, authorize('PATIENT_ADMIN')] },
+    async (req, reply) => {
+      const { familyId } = req.params as { familyId: string }
+      const accesses = await caregiverService.listAccesses(req.user, familyId)
+      return reply.status(200).send({ data: accesses })
+    },
+  )
+
+  // PATCH /families/:familyId/caregiver-accesses/:id/revoke
+  fastify.patch(
+    '/families/:familyId/caregiver-accesses/:id/revoke',
+    { preHandler: [authenticate, authorize('PATIENT_ADMIN')] },
+    async (req, reply) => {
+      const { familyId, id } = req.params as { familyId: string; id: string }
+      await caregiverService.revokeAccess(req.user, familyId, id)
+      return reply.status(204).send()
+    },
+  )
+
+  // DELETE /families/:familyId/caregiver-accesses/:id
+  fastify.delete(
+    '/families/:familyId/caregiver-accesses/:id',
+    { preHandler: [authenticate, authorize('PATIENT_ADMIN')] },
+    async (req, reply) => {
+      const { familyId, id } = req.params as { familyId: string; id: string }
+      await caregiverService.deleteAccess(req.user, familyId, id)
+      return reply.status(204).send()
+    },
+  )
+
   // POST /caregiver-invites/redeem — conta app (admin/familiar/cuidador) resgata o código
   fastify.post(
     '/caregiver-invites/redeem',

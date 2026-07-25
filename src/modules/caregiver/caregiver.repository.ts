@@ -38,12 +38,52 @@ export const caregiverRepository = {
     })
   },
 
+  deleteInvite(id: string) {
+    return db.caregiverInvite.delete({ where: { id } })
+  },
+
   findFamilyById(id: string) {
     return db.family.findUnique({ where: { id } })
   },
 
   findCaregiverAccess(caregiverId: string, familyId: string) {
     return db.caregiverAccess.findFirst({ where: { caregiverId, familyId } })
+  },
+
+  findAccessByIdScoped(id: string, familyId: string) {
+    return db.caregiverAccess.findFirst({
+      where: { id, familyId },
+      include: { caregiver: { select: { id: true, name: true, email: true } } },
+    })
+  },
+
+  findManyAccessesByFamilyId(familyId: string) {
+    return db.caregiverAccess.findMany({
+      where: { familyId },
+      include: { caregiver: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+  },
+
+  findActiveAccessesByEmail(familyId: string, email: string) {
+    return db.caregiverAccess.findMany({
+      where: {
+        familyId,
+        status: 'ACTIVE',
+        caregiver: { email: email.toLowerCase() },
+      },
+    })
+  },
+
+  revokeAccess(id: string) {
+    return db.caregiverAccess.update({
+      where: { id },
+      data: { status: 'REVOKED', revokedAt: new Date() },
+    })
+  },
+
+  deleteAccess(id: string) {
+    return db.caregiverAccess.delete({ where: { id } })
   },
 
   activateCaregiverAccess(

@@ -86,6 +86,17 @@ export default async function medicalAccessRoutes(fastify: FastifyInstance) {
     },
   )
 
+  // DELETE /medical-access/grants/:id — remove da lista (só REVOKED/EXPIRED)
+  fastify.delete(
+    '/medical-access/grants/:id',
+    { preHandler: [authenticate, authorize('PATIENT_ADMIN', 'FAMILY_MEMBER')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      await medicalAccessService.delete(req.user, id)
+      return reply.status(204).send()
+    },
+  )
+
   // GET /medical-access/my-grants — grants que o médico/clínica possui.
   // `?status=ACTIVE` filtra pra excluir revogados/expirados (ver "meus pacientes" no web).
   fastify.get(

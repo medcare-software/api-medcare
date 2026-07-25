@@ -118,6 +118,21 @@ export const medicalAccessService = {
     await medicalAccessRepository.revoke(grant.id)
   },
 
+  async delete(user: AuthUser, id: string) {
+    const memberIds = await resolveOwnScopedMemberIds(user)
+    const grant = await medicalAccessRepository.findByIdScoped(id, memberIds)
+    if (!grant) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Grant não encontrado' })
+    }
+    if (grant.status !== 'REVOKED' && grant.status !== 'EXPIRED') {
+      throw new AppError({
+        code: 'VALIDATION_ERROR',
+        message: 'Só é possível excluir acessos revogados ou expirados',
+      })
+    }
+    await medicalAccessRepository.delete(grant.id)
+  },
+
   async listHeld(user: AuthUser, status?: AccessStatus) {
     if (user.role === 'DOCTOR') {
       const doctorId = await resolveDoctorId(user.id)

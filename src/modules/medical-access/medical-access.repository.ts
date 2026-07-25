@@ -61,6 +61,10 @@ export const medicalAccessRepository = {
     })
   },
 
+  delete(id: string) {
+    return db.medicalAccessGrant.delete({ where: { id } })
+  },
+
   // `status` opcional: sem ele, a clínica/médico também precisa ver grants
   // expirados/revogados na própria listagem (coluna "Status" e KPIs da tela de
   // acessos). O consumidor "meus pacientes" do médico passa status=ACTIVE.

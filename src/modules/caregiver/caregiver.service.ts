@@ -65,6 +65,70 @@ export const caregiverService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Convite não encontrado' })
     }
     await caregiverRepository.revokeInvite(invite.id)
+    // Convite resgatado → CaregiverAccess ACTIVE continua até revogar explicitamente.
+    const linked = await caregiverRepository.findActiveAccessesByEmail(familyId, invite.email)
+    await Promise.all(linked.map((access) => caregiverRepository.revokeAccess(access.id)))
+  },
+
+  async deleteInvite(user: AuthUser, familyId: string, id: string) {
+    assertFamilyAdmin(user)
+    await assertOwnFamilyInScope(user, familyId)
+    const invite = await caregiverRepository.findInviteByIdScoped(id, familyId)
+    if (!invite) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Convite não encontrado' })
+    }
+    if (invite.status !== 'REVOKED' && invite.status !== 'EXPIRED') {
+      throw new AppError({
+        code: 'VALIDATION_ERROR',
+        message: 'Só é possível excluir convites revogados ou expirados',
+      })
+    }
+    await caregiverRepository.deleteInvite(invite.id)
+  },
+
+  async listAccesses(user: AuthUser, familyId: string) {
+    assertFamilyAdmin(user)
+    await assertOwnFamilyInScope(user, familyId)
+    const accesses = await caregiverRepository.findManyAccessesByFamilyId(familyId)
+    return accesses.map((access) => ({
+      id: access.id,
+      familyId: access.familyId,
+      status: access.status,
+      grantedAt: access.grantedAt,
+      expiresAt: access.expiresAt,
+      revokedAt: access.revokedAt,
+      createdAt: access.createdAt,
+      caregiver: access.caregiver,
+    }))
+  },
+
+  async revokeAccess(user: AuthUser, familyId: string, id: string) {
+    assertFamilyAdmin(user)
+    await assertOwnFamilyInScope(user, familyId)
+    const access = await caregiverRepository.findAccessByIdScoped(id, familyId)
+    if (!access) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Acesso de cuidador não encontrado' })
+    }
+    if (access.status === 'REVOKED') {
+      return
+    }
+    await caregiverRepository.revokeAccess(access.id)
+  },
+
+  async deleteAccess(user: AuthUser, familyId: string, id: string) {
+    assertFamilyAdmin(user)
+    await assertOwnFamilyInScope(user, familyId)
+    const access = await caregiverRepository.findAccessByIdScoped(id, familyId)
+    if (!access) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Acesso de cuidador não encontrado' })
+    }
+    if (access.status !== 'REVOKED' && access.status !== 'EXPIRED') {
+      throw new AppError({
+        code: 'VALIDATION_ERROR',
+        message: 'Só é possível excluir acessos revogados ou expirados',
+      })
+    }
+    await caregiverRepository.deleteAccess(access.id)
   },
 
   /**
