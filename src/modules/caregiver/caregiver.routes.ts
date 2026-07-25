@@ -46,10 +46,15 @@ export default async function caregiverRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // POST /caregiver-invites/redeem — cuidador resgata o código recebido por e-mail
+  // POST /caregiver-invites/redeem — conta app (admin/familiar/cuidador) resgata o código
   fastify.post(
     '/caregiver-invites/redeem',
-    { preHandler: [authenticate, authorize('CAREGIVER')] },
+    {
+      preHandler: [
+        authenticate,
+        authorize('PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'),
+      ],
+    },
     async (req, reply) => {
       const body = RedeemCaregiverInviteSchema.safeParse(req.body)
       if (!body.success) {
@@ -64,10 +69,15 @@ export default async function caregiverRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // GET /caregivers/me/families — famílias com CaregiverAccess ativo do cuidador logado
+  // GET /caregivers/me/families — famílias com CaregiverAccess ativo (modo cuidador)
   fastify.get(
     '/caregivers/me/families',
-    { preHandler: [authenticate, authorize('CAREGIVER')] },
+    {
+      preHandler: [
+        authenticate,
+        authorize('PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'),
+      ],
+    },
     async (req, reply) => {
       const families = await caregiverService.listMyFamilies(req.user)
       return reply.status(200).send({ data: families })

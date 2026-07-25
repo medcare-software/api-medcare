@@ -6,38 +6,67 @@ import type { AuthUser } from '../types/auth.types.js'
 
 // Roles que acessam o prontuário através do pertencimento a uma Family
 // (PATIENT_ADMIN/FAMILY_MEMBER via FamilyMember.userId, CAREGIVER via CaregiverAccess).
+// Mesma conta pode ter FamilyMember E CaregiverAccess (modos distintos na UI).
 const FAMILY_ROLES: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER']
+
+const caregiverAccessWhere = (userId: string) => ({
+  caregiverId: userId,
+  status: 'ACTIVE' as const,
+  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+})
 
 export function isFamilyRole(role: Role): boolean {
   return FAMILY_ROLES.includes(role)
 }
 
+/** Famílias com CaregiverAccess ACTIVE do usuário (modo cuidador). */
+export async function resolveCaregiverFamilyIds(userId: string): Promise<string[]> {
+  const accesses = await db.caregiverAccess.findMany({
+    where: caregiverAccessWhere(userId),
+    select: { familyId: true },
+  })
+  return accesses.map((access) => access.familyId)
+}
+
+/**
+ * Famílias acessíveis: FamilyMember (modo pessoal) ∪ CaregiverAccess (modo cuidador).
+ * A UI não mistura os modos — o backend só precisa autorizar o vínculo correto.
+ */
 export async function resolveAccessibleFamilyIds(user: AuthUser): Promise<string[]> {
-  if (user.role === 'CAREGIVER') {
-    const accesses = await db.caregiverAccess.findMany({
-      where: {
-        caregiverId: user.id,
-        status: 'ACTIVE',
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      },
+  if (!isFamilyRole(user.role)) {
+    throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não tem acesso a registros familiares' })
+  }
+
+  const [member, caregiverFamilyIds] = await Promise.all([
+    db.familyMember.findUnique({
+      where: { userId: user.id },
       select: { familyId: true },
-    })
-    return accesses.map((access) => access.familyId)
-  }
+    }),
+    resolveCaregiverFamilyIds(user.id),
+  ])
 
-  if (isFamilyRole(user.role)) {
-    const member = await db.familyMember.findUnique({ where: { userId: user.id } })
-    return member ? [member.familyId] : []
-  }
+  const ids = new Set<string>(caregiverFamilyIds)
+  if (member) ids.add(member.familyId)
+  return [...ids]
+}
 
-  throw new AppError({ code: 'FORBIDDEN', message: 'Perfil não tem acesso a registros familiares' })
+/**
+ * Só a família do FamilyMember do usuário — gestão administrativa (convites,
+ * criar/excluir membros) não pode usar famílias só via CaregiverAccess.
+ */
+export async function assertOwnFamilyInScope(user: AuthUser, familyId: string): Promise<void> {
+  const member = await db.familyMember.findUnique({
+    where: { userId: user.id },
+    select: { familyId: true },
+  })
+  if (!member || member.familyId !== familyId) {
+    throw new AppError({ code: 'NOT_FOUND', message: 'Família não encontrada' })
+  }
 }
 
 /**
  * Todos os FamilyMember.id que o usuário pode ler/escrever: a própria família
- * (PATIENT_ADMIN/FAMILY_MEMBER) ou as famílias com CaregiverAccess ACTIVE (CAREGIVER).
- * PATIENT_ADMIN e FAMILY_MEMBER resolvem para o mesmo conjunto — toda a família —
- * já que não há hoje um campo que restrinja FAMILY_MEMBER a um subconjunto de membros.
+ * (PATIENT_ADMIN/FAMILY_MEMBER) ou as famílias com CaregiverAccess ACTIVE.
  *
  * Nunca lança para "sem família vinculada" — retorna `[]` e deixa os asserts de
  * escopo (assertMemberInScope/assertFamilyInScope) converterem isso em NOT_FOUND,
@@ -77,15 +106,26 @@ export async function resolveOwnMemberId(user: AuthUser): Promise<string | null>
 }
 
 /**
- * Como resolveAccessibleMemberIds, mas FAMILY_MEMBER resolve só para o próprio
- * member — não a família inteira. PATIENT_ADMIN e CAREGIVER mantêm o comportamento
- * atual (família toda). Usada pelos módulos clínicos e por families para restringir
- * leitura/escrita do membro comum ao próprio registro.
+ * Como resolveAccessibleMemberIds, mas FAMILY_MEMBER na própria família resolve
+ * só para o próprio member. Em famílias via CaregiverAccess, vê/escreve o roster
+ * completo (modo cuidador). PATIENT_ADMIN e CAREGIVER: famílias acessíveis inteiras.
  */
 export async function resolveOwnScopedMemberIds(user: AuthUser): Promise<string[]> {
   if (user.role === 'FAMILY_MEMBER') {
-    const ownId = await resolveOwnMemberId(user)
-    return ownId ? [ownId] : []
+    const [ownId, caregiverFamilyIds] = await Promise.all([
+      resolveOwnMemberId(user),
+      resolveCaregiverFamilyIds(user.id),
+    ])
+    const ids = new Set<string>()
+    if (ownId) ids.add(ownId)
+    if (caregiverFamilyIds.length > 0) {
+      const members = await db.familyMember.findMany({
+        where: { familyId: { in: caregiverFamilyIds }, deletedAt: null },
+        select: { id: true },
+      })
+      for (const m of members) ids.add(m.id)
+    }
+    return [...ids]
   }
   return resolveAccessibleMemberIds(user)
 }

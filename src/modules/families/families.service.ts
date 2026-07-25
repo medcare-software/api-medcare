@@ -7,7 +7,9 @@ import type { FastifyInstance } from 'fastify'
 import { env } from '../../config/env.js'
 import {
   assertFamilyInScope,
+  assertOwnFamilyInScope,
   resolveAccessibleFamilyIds,
+  resolveCaregiverFamilyIds,
   resolveOwnMemberId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
@@ -108,6 +110,13 @@ export const familiesService = {
 
   async listMembers(user: AuthUser, familyId: string) {
     await assertFamilyInScope(user, familyId)
+    // Familiar comum: roster completo só em famílias onde é cuidador — não na própria.
+    if (user.role === 'FAMILY_MEMBER') {
+      const caregiverFamilyIds = await resolveCaregiverFamilyIds(user.id)
+      if (!caregiverFamilyIds.includes(familyId)) {
+        throw new AppError({ code: 'NOT_FOUND', message: 'Família não encontrada' })
+      }
+    }
     const members = await familiesRepository.findManyByFamilyId(familyId)
     return members.map(toMemberSummary)
   },
@@ -132,7 +141,7 @@ export const familiesService = {
     input: CreateFamilyMemberInput,
   ) {
     assertFamilyWriter(user)
-    await assertFamilyInScope(user, familyId)
+    await assertOwnFamilyInScope(user, familyId)
 
     if (input.email) {
       const created = await createMemberWithLogin(fastify, user, familyId, {
@@ -177,6 +186,7 @@ export const familiesService = {
       })
     }
     const member = await getScopedOrThrow(user, id)
+    await assertFamilyProfileWriteAllowed(user, member)
     const cpfFields = await resolveCpfFields(input.cpf, id)
 
     // Rebaixar o único administrador restante deixaria a família sem ninguém com
@@ -240,7 +250,8 @@ export const familiesService = {
 
   async upsertHealthProfile(user: AuthUser, id: string, input: UpsertHealthProfileInput) {
     assertProfileWriter(user)
-    await getScopedOrThrow(user, id)
+    const member = await getScopedOrThrow(user, id)
+    await assertFamilyProfileWriteAllowed(user, member)
 
     const profile = await familiesRepository.upsertHealthProfile(id, {
       ...(input.weightKg !== undefined && { weightKg: input.weightKg }),
@@ -256,6 +267,7 @@ export const familiesService = {
   async deleteMember(user: AuthUser, id: string) {
     assertFamilyWriter(user)
     const member = await getScopedOrThrow(user, id)
+    await assertOwnFamilyInScope(user, member.familyId)
     if (member.isAdmin) {
       throw new AppError({
         code: 'CONFLICT',
@@ -427,9 +439,25 @@ function assertProfileWriter(user: AuthUser) {
   }
 }
 
-// Escopa por família (todos os papéis) e, para FAMILY_MEMBER, restringe ainda mais
-// ao próprio registro — ele não pode ler/editar o perfil de outro membro da mesma
-// família, mesmo estando dentro do escopo familiar.
+/** Editar perfil/saúde: só na própria família (admin) ou no próprio registro (familiar). */
+async function assertFamilyProfileWriteAllowed(
+  user: AuthUser,
+  member: { id: string; familyId: string },
+) {
+  if (user.role === 'PATIENT_ADMIN') {
+    await assertOwnFamilyInScope(user, member.familyId)
+    return
+  }
+  if (user.role === 'FAMILY_MEMBER') {
+    const ownId = await resolveOwnMemberId(user)
+    if (member.id !== ownId) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Morador não encontrado' })
+    }
+  }
+}
+
+// Escopa por família (FamilyMember ∪ CaregiverAccess). FAMILY_MEMBER na própria
+// família só acessa o próprio registro; em famílias via CaregiverAccess, roster.
 async function getScopedOrThrow(user: AuthUser, id: string) {
   const familyIds = await resolveAccessibleFamilyIds(user)
   const member = await familiesRepository.findByIdScoped(id, familyIds)
@@ -437,8 +465,13 @@ async function getScopedOrThrow(user: AuthUser, id: string) {
     throw new AppError({ code: 'NOT_FOUND', message: 'Morador não encontrado' })
   }
   if (user.role === 'FAMILY_MEMBER') {
-    const ownId = await resolveOwnMemberId(user)
-    if (member.id !== ownId) {
+    const [ownId, caregiverFamilyIds] = await Promise.all([
+      resolveOwnMemberId(user),
+      resolveCaregiverFamilyIds(user.id),
+    ])
+    const allowed =
+      member.id === ownId || caregiverFamilyIds.includes(member.familyId)
+    if (!allowed) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Morador não encontrado' })
     }
   }

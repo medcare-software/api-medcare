@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 
 import { env } from '../../config/env.js'
-import { assertFamilyInScope } from '../../shared/access/index.js'
+import { assertOwnFamilyInScope } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import { caregiverInviteCodeTemplate, sendMail } from '../../shared/mail/index.js'
 import { sendPushToUser } from '../../shared/push/index.js'
@@ -14,7 +14,7 @@ export const caregiverService = {
   // Só PATIENT_ADMIN convida — reforça a mesma regra de escrita de families.service.
   async createInvite(user: AuthUser, familyId: string, input: CreateCaregiverInviteInput) {
     assertFamilyAdmin(user)
-    await assertFamilyInScope(user, familyId)
+    await assertOwnFamilyInScope(user, familyId)
 
     const family = await caregiverRepository.findFamilyById(familyId)
     if (!family) {
@@ -52,14 +52,14 @@ export const caregiverService = {
 
   async listInvites(user: AuthUser, familyId: string) {
     assertFamilyAdmin(user)
-    await assertFamilyInScope(user, familyId)
+    await assertOwnFamilyInScope(user, familyId)
     const invites = await caregiverRepository.findManyInvitesByFamilyId(familyId)
     return invites.map(omitCodeHash)
   },
 
   async revokeInvite(user: AuthUser, familyId: string, id: string) {
     assertFamilyAdmin(user)
-    await assertFamilyInScope(user, familyId)
+    await assertOwnFamilyInScope(user, familyId)
     const invite = await caregiverRepository.findInviteByIdScoped(id, familyId)
     if (!invite) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Convite não encontrado' })

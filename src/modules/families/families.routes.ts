@@ -10,9 +10,9 @@ import {
 } from './families.schema.js'
 import { familiesService } from './families.service.js'
 
-// Roster inteiro da família — FAMILY_MEMBER fica de fora (o service não restringe
-// por member nessa listagem, incluí-lo aqui vazaria dados de outros membros).
-const FAMILY_READERS = ['PATIENT_ADMIN', 'CAREGIVER'] as const
+// Roster inteiro: admin e cuidador (role). FAMILY_MEMBER entra só quando a família
+// é via CaregiverAccess — o service bloqueia roster da própria família.
+const FAMILY_READERS = ['PATIENT_ADMIN', 'CAREGIVER', 'FAMILY_MEMBER'] as const
 // Um único membro — FAMILY_MEMBER pode buscar (o service restringe ao próprio via
 // getScopedOrThrow), necessário para ele conseguir carregar o próprio perfil.
 const FAMILY_MEMBER_READERS = ['PATIENT_ADMIN', 'CAREGIVER', 'FAMILY_MEMBER'] as const
