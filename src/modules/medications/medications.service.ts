@@ -51,7 +51,9 @@ export const medicationsService = {
     try {
       const medication = await medicationsRepository.create(memberId, data, idempotencyKey)
       if (medication.riskAcknowledgedAt) {
-        await notifyMedicationRiskAcknowledged({ medication, actorUserId: user.id })
+        // Não bloqueia a resposta HTTP — push lento/falho no Railway virava
+        // timeout no app com o medicamento já gravado (duplicata no retry).
+        void notifyMedicationRiskAcknowledged({ medication, actorUserId: user.id }).catch(() => {})
       }
       return medication
     } catch (err) {
