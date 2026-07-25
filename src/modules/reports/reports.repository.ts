@@ -277,7 +277,7 @@ export const reportsRepository = {
     })
   },
 
-  countUsersByCity(state?: string) {
+  countUsersByCity(state?: string, take = 5) {
     return db.user.groupBy({
       by: ['city', 'state'],
       where: {
@@ -288,7 +288,7 @@ export const reportsRepository = {
       },
       _count: { _all: true },
       orderBy: { _count: { city: 'desc' } },
-      take: 5,
+      take,
     })
   },
 

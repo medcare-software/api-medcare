@@ -5,7 +5,15 @@ const paginationShape = {
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 }
 
-export const ListReportPageQuerySchema = z.object(paginationShape)
+const dateRangeShape = {
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+}
+
+export const ListReportPageQuerySchema = z.object({
+  ...paginationShape,
+  ...dateRangeShape,
+})
 
 const csvToArray = z
   .string()
@@ -24,6 +32,7 @@ export const MedicationsReportQuerySchema = z.object({
   clinicIds: csvToArray,
   doctorIds: csvToArray,
   ...paginationShape,
+  ...dateRangeShape,
 })
 
 export const MedicationCitiesQuerySchema = z.object({
@@ -40,6 +49,7 @@ export const ChurnReportQuerySchema = z.object({
   sortDir: z.enum(['asc', 'desc']).default('desc'),
   evolutionMonths: z.coerce.number().int().positive().max(24).default(6),
   ...paginationShape,
+  ...dateRangeShape,
 })
 
 export const GrowthReportQuerySchema = z.object({
