@@ -19,7 +19,7 @@ import {
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
-import { issuePasswordResetSessionToken } from '../auth/auth.service.js'
+import { issuePasswordResetLinkToken } from '../auth/auth.service.js'
 import { plansRepository } from '../plans/plans.repository.js'
 import { plansService } from '../plans/plans.service.js'
 import { clinicsRepository } from './clinics.repository.js'
@@ -223,7 +223,7 @@ export const clinicsService = {
     }
 
     try {
-      const activationToken = issuePasswordResetSessionToken(
+      const activationToken = await issuePasswordResetLinkToken(
         fastify,
         activationUserId,
         env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,

@@ -22,7 +22,7 @@ import {
   recordAuditEvent,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
-import { issuePasswordResetSessionToken } from '../auth/auth.service.js'
+import { issuePasswordResetLinkToken } from '../auth/auth.service.js'
 import { familiesRepository } from './families.repository.js'
 import type {
   CreateFamilyMemberInput,
@@ -359,7 +359,7 @@ async function createMemberWithLogin(
     ...memberFields,
   })
 
-  const activationToken = issuePasswordResetSessionToken(
+  const activationToken = await issuePasswordResetLinkToken(
     fastify,
     newUser.id,
     env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,

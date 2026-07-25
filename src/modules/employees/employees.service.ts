@@ -7,7 +7,7 @@ import { employeeActivationLinkTemplate, sendMail } from '../../shared/mail/inde
 import { generateTemporaryPassword, recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { omitUndefined } from '../../shared/utils/index.js'
-import { issuePasswordResetSessionToken } from '../auth/auth.service.js'
+import { issuePasswordResetLinkToken } from '../auth/auth.service.js'
 import { employeesRepository } from './employees.repository.js'
 import type {
   CreateEmployeeInput,
@@ -74,7 +74,7 @@ export const employeesService = {
     })
 
     try {
-      const activationToken = issuePasswordResetSessionToken(
+      const activationToken = await issuePasswordResetLinkToken(
         fastify,
         employee.userId as string,
         env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,

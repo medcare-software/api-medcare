@@ -3,12 +3,17 @@ import crypto from 'node:crypto'
 import type { Role } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import type { FastifyInstance } from 'fastify'
+import { nanoid } from 'nanoid'
 
 import { env } from '../../config/env.js'
+import { redis } from '../../config/redis.js'
 import { AppError } from '../../shared/errors/index.js'
 import { passwordResetCodeTemplate, sendMail } from '../../shared/mail/index.js'
 import { hashForLookup, onlyDigits, recordAuditEvent } from '../../shared/security/index.js'
-import type { PasswordResetDestination, PasswordResetSessionPayload } from '../../shared/types/auth.types.js'
+import type {
+  PasswordResetDestination,
+  PasswordResetSessionPayload,
+} from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
 import { auditLogsRepository } from '../audit-logs/audit-logs.repository.js'
 import { authRepository } from './auth.repository.js'
@@ -16,6 +21,7 @@ import type { CrmLoginInput, EmailLoginInput, IdentifierLoginInput } from './aut
 
 const MAX_RESET_CODE_ATTEMPTS = 5
 const LOGIN_AUDIT_THROTTLE_MS = 24 * 60 * 60 * 1000
+const PASSWORD_RESET_LINK_PREFIX = 'pwdreset:'
 
 // Reutilizado tanto pelo fluxo de "esqueci a senha" (após verificar o código)
 // quanto pela ativação de conta (link de e-mail) — mesmo JWT de propósito único,
@@ -32,6 +38,47 @@ export function issuePasswordResetSessionToken(
     ...(destination !== undefined && { destination }),
   }
   return fastify.jwt.sign(payload, { expiresIn })
+}
+
+/**
+ * Token curto pra URL de e-mail (Redis → JWT). JWT inteiro no link costuma ser
+ * filtrado por Gmail/provedores como phishing; o OTP de 6 dígitos não tem esse
+ * problema. Se Redis falhar, devolve o JWT (fallback).
+ */
+export async function issuePasswordResetLinkToken(
+  fastify: FastifyInstance,
+  userId: string,
+  expiresIn: string,
+  destination?: PasswordResetDestination,
+): Promise<string> {
+  const jwt = issuePasswordResetSessionToken(fastify, userId, expiresIn, destination)
+  const linkToken = nanoid(24)
+  const ttlSec = Math.max(60, Math.ceil(parseDurationToMs(expiresIn) / 1000))
+  try {
+    await redis.set(`${PASSWORD_RESET_LINK_PREFIX}${linkToken}`, jwt, 'EX', ttlSec)
+    return linkToken
+  } catch (err) {
+    console.error(
+      '[auth] Redis indisponível pra token curto de ativação — fallback JWT na URL',
+      err,
+    )
+    return jwt
+  }
+}
+
+/** Aceita JWT (3 partes) ou id curto guardado no Redis. */
+export async function resolvePasswordResetSessionToken(token: string): Promise<string> {
+  if (token.split('.').length === 3) return token
+  try {
+    const jwt = await redis.get(`${PASSWORD_RESET_LINK_PREFIX}${token}`)
+    if (jwt) return jwt
+  } catch (err) {
+    console.error('[auth] Redis indisponível ao resolver token de reset', err)
+  }
+  throw new AppError({
+    code: 'TOKEN_INVALID',
+    message: 'Sessão de redefinição inválida ou expirada',
+  })
 }
 
 export const authService = {
@@ -271,9 +318,10 @@ export const authService = {
     resetSessionToken: string,
     newPassword: string,
   ): Promise<void> {
+    const jwt = await resolvePasswordResetSessionToken(resetSessionToken)
     let payload: PasswordResetSessionPayload
     try {
-      payload = fastify.jwt.verify<PasswordResetSessionPayload>(resetSessionToken)
+      payload = fastify.jwt.verify<PasswordResetSessionPayload>(jwt)
     } catch {
       throw new AppError({
         code: 'TOKEN_INVALID',
@@ -293,12 +341,13 @@ export const authService = {
   // Checagem sem efeito colateral (não consome/revoga nada) — usada pela página
   // https intermediária antes de mostrar a UI de "definir senha" pra um token
   // que pode ter vindo de qualquer lugar, não só de um e-mail real emitido por nós.
-  validateResetSessionToken(
+  async validateResetSessionToken(
     fastify: FastifyInstance,
     token: string,
-  ): { valid: boolean; destination?: PasswordResetDestination } {
+  ): Promise<{ valid: boolean; destination?: PasswordResetDestination }> {
     try {
-      const payload = fastify.jwt.verify<PasswordResetSessionPayload>(token)
+      const jwt = await resolvePasswordResetSessionToken(token)
+      const payload = fastify.jwt.verify<PasswordResetSessionPayload>(jwt)
       if (payload.purpose !== 'password_reset') return { valid: false }
       return {
         valid: true,

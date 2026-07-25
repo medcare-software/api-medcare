@@ -51,6 +51,14 @@ export async function sendMail(input: SendMailInput): Promise<void> {
     console.warn(
       `[mail] SMTP não configurado — e-mail não enviado de verdade.\n  Para: ${input.to}\n  Assunto: ${input.subject}\n  Conteúdo: ${input.text}`,
     )
+    // Em produção SMTP é obrigatório — sem isso o create "passa" e o usuário
+    // acha que o convite saiu. Em dev/local continua só logando no console.
+    if (env.NODE_ENV === 'production') {
+      throw new AppError({
+        code: 'EMAIL_SEND_FAILED',
+        message: 'Não foi possível enviar o e-mail. Tente novamente em instantes.',
+      })
+    }
     return
   }
 
@@ -65,6 +73,9 @@ export async function sendMail(input: SendMailInput): Promise<void> {
     console.warn(
       `[mail] SMTP resposta: ${info.response} | accepted: ${JSON.stringify(info.accepted)} | rejected: ${JSON.stringify(info.rejected)} | messageId: ${info.messageId}`,
     )
+    if (info.rejected && info.rejected.length > 0) {
+      throw new Error(`Destinatário rejeitado pelo SMTP: ${info.rejected.join(', ')}`)
+    }
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err)
     console.error(`[mail] Falha ao enviar e-mail via SMTP para ${input.to}: ${cause}`)

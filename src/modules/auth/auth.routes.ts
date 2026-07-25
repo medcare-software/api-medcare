@@ -185,7 +185,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         details: body.error.issues,
       })
     }
-    const result = authService.validateResetSessionToken(fastify, body.data.token)
+    const result = await authService.validateResetSessionToken(fastify, body.data.token)
     return reply.status(200).send({ data: result })
   })
 

@@ -17,7 +17,7 @@ import {
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
-import { issuePasswordResetSessionToken } from '../auth/auth.service.js'
+import { issuePasswordResetLinkToken } from '../auth/auth.service.js'
 import { plansService } from '../plans/plans.service.js'
 import { doctorsRepository } from './doctors.repository.js'
 import type {
@@ -113,7 +113,7 @@ export const doctorsService = {
       // do app-medcare), o e-mail de ativação precisa ser enviado — sem isso a
       // pessoa nunca fica sabendo que ganhou acesso ao portal médico.
       try {
-        const activationToken = issuePasswordResetSessionToken(
+        const activationToken = await issuePasswordResetLinkToken(
           fastify,
           existingUser.id,
           env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
@@ -154,7 +154,7 @@ export const doctorsService = {
       })
 
       try {
-        const activationToken = issuePasswordResetSessionToken(
+        const activationToken = await issuePasswordResetLinkToken(
           fastify,
           doctor.user.id,
           env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
