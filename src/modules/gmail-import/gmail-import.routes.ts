@@ -42,7 +42,7 @@ export default async function gmailImportRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const exam = await gmailImportService.confirm(req.user.id, id, body.data.memberId)
+      const exam = await gmailImportService.confirm(req.user, id, body.data.memberId)
       return reply.status(200).send({ data: exam })
     },
   )

@@ -4,10 +4,10 @@ import type { AccessStatus } from '@prisma/client'
 import { db } from '../../config/database.js'
 import { env } from '../../config/env.js'
 import {
-  assertMemberInScope,
-  resolveAccessibleMemberIds,
+  assertOwnScopedMemberInScope,
   resolveClinicId,
   resolveDoctorId,
+  resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import { sendPushToUser } from '../../shared/push/index.js'
@@ -50,7 +50,7 @@ export const medicalAccessService = {
   },
 
   async createGrant(user: AuthUser, input: CreateGrantInput) {
-    await assertMemberInScope(user, input.memberId)
+    await assertOwnScopedMemberInScope(user, input.memberId)
 
     const code = String(crypto.randomInt(100000, 1000000))
     const codeHash = hashForLookup(code)
@@ -124,13 +124,13 @@ export const medicalAccessService = {
   },
 
   async listMine(user: AuthUser) {
-    const memberIds = await resolveAccessibleMemberIds(user)
+    const memberIds = await resolveOwnScopedMemberIds(user)
     const grants = await medicalAccessRepository.findManyByMemberIds(memberIds)
     return grants.map(omitCodeHash)
   },
 
   async revoke(user: AuthUser, id: string) {
-    const memberIds = await resolveAccessibleMemberIds(user)
+    const memberIds = await resolveOwnScopedMemberIds(user)
     const grant = await medicalAccessRepository.findByIdScoped(id, memberIds)
     if (!grant) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Grant não encontrado' })

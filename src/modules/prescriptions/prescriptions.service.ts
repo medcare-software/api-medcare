@@ -6,7 +6,7 @@ import {
 } from '../../shared/access/index.js'
 import { checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
 import { getMedicationRiskContext } from '../../shared/ai/medication-risk.helpers.js'
-import { composeRisk } from '../../shared/drug-interactions/compose-risk.js'
+import { composeRisk, isRiskCheckDegraded } from '../../shared/drug-interactions/compose-risk.js'
 import { checkImsesInteractions } from '../../shared/drug-interactions/imses.client.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
@@ -138,15 +138,24 @@ export const prescriptionsService = {
     ])
     const result = composeRisk(aiResult, imsesResult)
 
+    const degraded = isRiskCheckDegraded({
+      aiDegraded: aiResult.degraded,
+      imsesRecognized: imsesResult.recognized,
+      activeMedicationCount: context.activeMedications.length,
+      allergyCount: context.allergies.length,
+      newDrugCount: input.items.length,
+    })
+
     await recordAuditEvent({
       actorId: user.id,
-      action: result.degraded ? 'MEDICATION_RISK_CHECK_DEGRADED' : 'MEDICATION_RISK_CHECK',
+      action: degraded ? 'MEDICATION_RISK_CHECK_DEGRADED' : 'MEDICATION_RISK_CHECK',
       targetType: 'FamilyMember',
       targetId: input.memberId,
       metadata: {
         drugNames: input.items.map((item) => item.name),
         hasRisk: result.hasRisk,
         riskCount: result.risks.length,
+        aiDegraded: aiResult.degraded,
       },
     })
 
@@ -154,7 +163,7 @@ export const prescriptionsService = {
       hasRisk: result.hasRisk,
       risks: result.risks,
       disclaimer: DISCLAIMER,
-      degraded: result.degraded,
+      degraded,
     }
   },
 

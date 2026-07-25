@@ -36,3 +36,25 @@ export function composeRisk(
     degraded: aiResult.degraded,
   }
 }
+
+/**
+ * Decide se a checagem ficou incompleta de verdade.
+ * `aiDegraded` sozinho não basta: sem meds ativos / sem alergias não há o que
+ * cruzar (1º medicamento), e interação pode estar coberta só pelo IMSES.
+ * `newDrugCount > 1` (receituário) também exige checagem entre os itens novos.
+ */
+export function isRiskCheckDegraded(params: {
+  aiDegraded: boolean
+  imsesRecognized: boolean
+  activeMedicationCount: number
+  allergyCount: number
+  newDrugCount?: number
+}): boolean {
+  const newDrugCount = params.newDrugCount ?? 1
+  const needsInteractionCheck = params.activeMedicationCount > 0 || newDrugCount > 1
+  const needsAllergyCheck = params.allergyCount > 0
+  const interactionCovered =
+    !needsInteractionCheck || params.imsesRecognized || !params.aiDegraded
+  const allergyCovered = !needsAllergyCheck || !params.aiDegraded
+  return !interactionCovered || !allergyCovered
+}

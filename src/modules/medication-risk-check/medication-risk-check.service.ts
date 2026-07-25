@@ -1,7 +1,11 @@
 import { assertOwnScopedMemberInScope } from '../../shared/access/index.js'
 import { checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
 import { getMedicationRiskContext } from '../../shared/ai/medication-risk.helpers.js'
-import { type ComposedRisk, composeRisk } from '../../shared/drug-interactions/compose-risk.js'
+import {
+  type ComposedRisk,
+  composeRisk,
+  isRiskCheckDegraded,
+} from '../../shared/drug-interactions/compose-risk.js'
 import { checkImsesInteractions } from '../../shared/drug-interactions/imses.client.js'
 import { recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
@@ -41,18 +45,26 @@ export const medicationRiskCheckService = {
     ])
     const result = composeRisk(aiResult, imsesResult)
 
+    const degraded = isRiskCheckDegraded({
+      aiDegraded: aiResult.degraded,
+      imsesRecognized: imsesResult.recognized,
+      activeMedicationCount: context.activeMedications.length,
+      allergyCount: context.allergies.length,
+    })
+
     // Toda checagem fica registrada — inclusive quando degradada, pra dar
     // visibilidade operacional de que a IA não rodou (ver Decisões de
     // arquitetura do plano: fail-open não pode ser silencioso).
     await recordAuditEvent({
       actorId: user.id,
-      action: result.degraded ? 'MEDICATION_RISK_CHECK_DEGRADED' : 'MEDICATION_RISK_CHECK',
+      action: degraded ? 'MEDICATION_RISK_CHECK_DEGRADED' : 'MEDICATION_RISK_CHECK',
       targetType: 'FamilyMember',
       targetId: input.memberId,
       metadata: {
         drugName: input.name,
         hasRisk: result.hasRisk,
         riskCount: result.risks.length,
+        aiDegraded: aiResult.degraded,
       },
     })
 
@@ -60,7 +72,7 @@ export const medicationRiskCheckService = {
       hasRisk: result.hasRisk,
       risks: result.risks,
       disclaimer: DISCLAIMER,
-      degraded: result.degraded,
+      degraded,
     }
   },
 }

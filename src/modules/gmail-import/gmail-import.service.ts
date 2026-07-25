@@ -1,6 +1,8 @@
 import type { ExamType, GmailImportedExam, GmailIntegration, LabEmail } from '@prisma/client'
 
+import { db } from '../../config/database.js'
 import { extractExamFromEmail } from '../../shared/ai/gmail-exam.client.js'
+import { assertOwnScopedMemberInScope } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
   getAttachment,
@@ -9,6 +11,7 @@ import {
   searchMessages,
 } from '../../shared/google/gmail-oauth.client.js'
 import { sendPushToUser } from '../../shared/push/index.js'
+import type { AuthUser } from '../../shared/types/auth.types.js'
 import { decryptField, encryptField, recordSensitiveAccess } from '../../shared/security/index.js'
 import { filesRepository } from '../files/files.repository.js'
 import { gmailImportRepository } from './gmail-import.repository.js'
@@ -209,7 +212,20 @@ async function processIntegration(
       )
       const matchedMemberId = findConfidentMemberMatch(familyMembers, extraction.patientNameGuess)
 
-      if (matchedMemberId) {
+      const owner = await db.user.findUnique({
+        where: { id: integration.userId },
+        select: { role: true },
+      })
+      const ownMember =
+        owner?.role === 'FAMILY_MEMBER'
+          ? await gmailImportRepository.findOwnFamilyMember(integration.userId)
+          : null
+      // FAMILY_MEMBER só auto-linka no próprio prontuário — match de outro membro fica PENDING.
+      const canAutoLink =
+        matchedMemberId &&
+        (owner?.role !== 'FAMILY_MEMBER' || matchedMemberId === ownMember?.id)
+
+      if (canAutoLink && matchedMemberId) {
         const exam = await gmailImportRepository.createExam({
           memberId: matchedMemberId,
           name:
@@ -307,17 +323,14 @@ export const gmailImportService = {
 
   // Cria o Exam de verdade só aqui, quando o usuário confirma de qual membro é
   // — nunca antes disso (ver processIntegration: caminho PENDING não cria Exam).
-  async confirm(userId: string, id: string, memberId: string) {
-    const item = await gmailImportRepository.findByIdScoped(id, userId)
+  async confirm(user: AuthUser, id: string, memberId: string) {
+    const item = await gmailImportRepository.findByIdScoped(id, user.id)
     if (!item) throw new AppError({ code: 'NOT_FOUND', message: 'Laudo não encontrado' })
     if (item.status !== 'PENDING') {
       throw new AppError({ code: 'CONFLICT', message: 'Este laudo já foi revisado' })
     }
 
-    const familyMembers = await gmailImportRepository.findFamilyMembersByUserId(userId)
-    if (!familyMembers.some((m) => m.id === memberId)) {
-      throw new AppError({ code: 'FORBIDDEN', message: 'Membro não pertence à sua família' })
-    }
+    await assertOwnScopedMemberInScope(user, memberId)
 
     const summary = (item.extractedSummary ?? {}) as StoredExtractedSummary
     const exam = await gmailImportRepository.createExam({
@@ -329,8 +342,8 @@ export const gmailImportService = {
     })
 
     await gmailImportRepository.markConfirmed(item.id, exam.id)
-    await gmailImportRepository.incrementImportedCount(userId)
-    await sendPushToUser(userId, {
+    await gmailImportRepository.incrementImportedCount(user.id)
+    await sendPushToUser(user.id, {
       title: 'Novo laudo importado do Gmail',
       body: `"${exam.name}" foi importado.`,
       data: { type: 'exam-shared', examId: exam.id, memberId },
