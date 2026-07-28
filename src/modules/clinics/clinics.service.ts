@@ -5,7 +5,11 @@ import type { FastifyInstance } from 'fastify'
 import { env } from '../../config/env.js'
 import { resolveClinicId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
-import { clinicAdminActivationLinkTemplate, sendMail } from '../../shared/mail/index.js'
+import {
+  clinicAdminTemporaryPasswordTemplate,
+  professionalPortalAccessGrantedTemplate,
+  sendMail,
+} from '../../shared/mail/index.js'
 import {
   decryptField,
   encryptField,
@@ -19,9 +23,15 @@ import {
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
-import { issuePasswordResetLinkToken } from '../auth/auth.service.js'
 import { plansRepository } from '../plans/plans.repository.js'
 import { plansService } from '../plans/plans.service.js'
+
+function clinicPortalLoginUrl() {
+  const base =
+    env.DOCTOR_ACTIVATION_LINK_BASE_URL.replace(/\/reset-password\/?$/i, '') ||
+    'https://www.medcaresw.com'
+  return `${base}/clinica/login`
+}
 import { clinicsRepository } from './clinics.repository.js'
 import type {
   CreateClinicInput,
@@ -162,7 +172,7 @@ async function recalculateExtraDoctorsCharge(clinicId: string) {
 }
 
 export const clinicsService = {
-  async create(fastify: FastifyInstance, user: AuthUser, input: CreateClinicInput) {
+  async create(_fastify: FastifyInstance, user: AuthUser, input: CreateClinicInput) {
     // E-mail já usado por alguém que já tem perfil de clínica (dono de OUTRA
     // clínica) continua bloqueado. Mas se o e-mail pertence a um User sem
     // ClinicAdminProfile (ex.: paciente do app-medcare), o perfil de admin é
@@ -181,7 +191,6 @@ export const clinicsService = {
     }
 
     let clinic: Clinic
-    let activationUserId: string
     if (existingAdmin) {
       clinic = await clinicsRepository.createWithExistingAdmin({
         legalNameEncrypted: encryptField(input.legalName),
@@ -195,11 +204,28 @@ export const clinicsService = {
         ...(input.planId !== undefined && { planId: input.planId }),
         adminUserId: existingAdmin.id,
       })
-      activationUserId = existingAdmin.id
+
+      try {
+        const template = professionalPortalAccessGrantedTemplate(
+          input.adminName,
+          'administrador de clínica',
+          clinicPortalLoginUrl(),
+        )
+        await sendMail({ to: input.adminEmail, ...template })
+      } catch (err) {
+        const cause = err instanceof Error ? err.message : String(err)
+        console.error(
+          `[clinics] Falha ao enviar e-mail de acesso para ${input.adminEmail}: ${cause}`,
+        )
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'CLINIC_ACTIVATION_EMAIL_FAILED',
+          targetType: 'Clinic',
+          targetId: clinic.id,
+          metadata: { email: input.adminEmail, error: cause },
+        })
+      }
     } else {
-      // Senha temporária nunca é exposta — o admin da clínica define a própria
-      // senha pelo link de ativação enviado por e-mail (mesmo mecanismo de
-      // doctorActivationLinkTemplate/employeeActivationLinkTemplate).
       const temporaryPassword = generateTemporaryPassword()
       const adminPasswordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
 
@@ -219,34 +245,27 @@ export const clinicsService = {
         ...(input.adminPhone !== undefined && { adminPhone: input.adminPhone }),
       })
       clinic = created.clinic
-      activationUserId = created.adminUserId
-    }
 
-    try {
-      const activationToken = await issuePasswordResetLinkToken(
-        fastify,
-        activationUserId,
-        env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
-        'clinic',
-      )
-      const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
-      const template = clinicAdminActivationLinkTemplate(link, input.adminName)
-      await sendMail({ to: input.adminEmail, ...template })
-    } catch (err) {
-      // Best-effort: o cadastro já foi concluído, falha no e-mail não deve derrubar a request.
-      // Mas a falha não pode ficar só no console — grava em AuditLog (visível na tela de
-      // Auditoria do admin) pra dar visibilidade de que o convite não chegou.
-      const cause = err instanceof Error ? err.message : String(err)
-      console.error(
-        `[clinics] Falha ao enviar e-mail de ativação para ${input.adminEmail}: ${cause}`,
-      )
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'CLINIC_ACTIVATION_EMAIL_FAILED',
-        targetType: 'Clinic',
-        targetId: clinic.id,
-        metadata: { email: input.adminEmail, error: cause },
-      })
+      try {
+        const template = clinicAdminTemporaryPasswordTemplate(
+          input.adminName,
+          temporaryPassword,
+          clinicPortalLoginUrl(),
+        )
+        await sendMail({ to: input.adminEmail, ...template })
+      } catch (err) {
+        const cause = err instanceof Error ? err.message : String(err)
+        console.error(
+          `[clinics] Falha ao enviar e-mail de senha para ${input.adminEmail}: ${cause}`,
+        )
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'CLINIC_ACTIVATION_EMAIL_FAILED',
+          targetType: 'Clinic',
+          targetId: clinic.id,
+          metadata: { email: input.adminEmail, error: cause },
+        })
+      }
     }
 
     // Assinatura inicial é opcional — só é criada se plano + forma de pagamento +

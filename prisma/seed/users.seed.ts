@@ -245,3 +245,192 @@ export async function seedUsers(db: PrismaClient) {
     ],
   }
 }
+
+type StoreReviewCred = { role: string; email: string; password: string }
+
+const STORE_REVIEW_ACCOUNTS = [
+  {
+    platform: 'apple',
+    familyId: 'seed-family-apple-review',
+    familyName: 'Família Apple Review',
+    accounts: [
+      {
+        role: 'PATIENT_ADMIN' as const,
+        email: 'testeappleadmin@email.com',
+        password: 'appleadmin123',
+        name: 'Admin Apple Review',
+        displayName: 'Admin Apple',
+        cpf: '100.200.300-11',
+        birthDate: '1985-01-10',
+        biologicalSex: 'MALE' as const,
+        relationship: 'Você',
+        isAdmin: true,
+      },
+      {
+        role: 'FAMILY_MEMBER' as const,
+        email: 'testeapplemembro@email.com',
+        password: 'applemembro123',
+        name: 'Membro Apple Review',
+        displayName: 'Membro Apple',
+        cpf: '100.200.300-22',
+        birthDate: '1990-05-20',
+        biologicalSex: 'FEMALE' as const,
+        relationship: 'Cônjuge',
+        isAdmin: false,
+      },
+      {
+        role: 'CAREGIVER' as const,
+        email: 'testeapplecuidador@email.com',
+        password: 'applecuidador123',
+        name: 'Cuidador Apple Review',
+        cpf: '100.200.300-33',
+      },
+    ],
+  },
+  {
+    platform: 'android',
+    familyId: 'seed-family-android-review',
+    familyName: 'Família Android Review',
+    accounts: [
+      {
+        role: 'PATIENT_ADMIN' as const,
+        email: 'testeandroidadmin@email.com',
+        password: 'androidadmin123',
+        name: 'Admin Android Review',
+        displayName: 'Admin Android',
+        cpf: '200.300.400-11',
+        birthDate: '1984-03-12',
+        biologicalSex: 'FEMALE' as const,
+        relationship: 'Você',
+        isAdmin: true,
+      },
+      {
+        role: 'FAMILY_MEMBER' as const,
+        email: 'testeandroidmembro@email.com',
+        password: 'androidmembro123',
+        name: 'Membro Android Review',
+        displayName: 'Membro Android',
+        cpf: '200.300.400-22',
+        birthDate: '1992-08-08',
+        biologicalSex: 'MALE' as const,
+        relationship: 'Filho',
+        isAdmin: false,
+      },
+      {
+        role: 'CAREGIVER' as const,
+        email: 'testeandroidcuidador@email.com',
+        password: 'androidcuidador123',
+        name: 'Cuidador Android Review',
+        cpf: '200.300.400-33',
+      },
+    ],
+  },
+] as const
+
+/** Contas para App Store / Play review (admin, membro, cuidador × Apple/Android). */
+export async function seedStoreReviewUsers(db: PrismaClient): Promise<{ credentials: StoreReviewCred[] }> {
+  const credentials: StoreReviewCred[] = []
+
+  for (const group of STORE_REVIEW_ACCOUNTS) {
+    const family = await db.family.upsert({
+      where: { id: group.familyId },
+      create: { id: group.familyId, name: group.familyName },
+      update: {},
+    })
+
+    for (const account of group.accounts) {
+      const passwordHash = await bcrypt.hash(account.password, BCRYPT_ROUNDS)
+
+      if (account.role === 'CAREGIVER') {
+        const caregiverUser = await db.user.upsert({
+          where: { email: account.email },
+          create: {
+            name: account.name,
+            email: account.email,
+            passwordHash,
+            role: 'CAREGIVER',
+            status: 'ACTIVE',
+            ...cpfFields(account.cpf),
+          },
+          update: { passwordHash, status: 'ACTIVE', name: account.name },
+        })
+
+        const existingAccess = await db.caregiverAccess.findFirst({
+          where: { caregiverId: caregiverUser.id, familyId: family.id },
+        })
+        if (!existingAccess) {
+          await db.caregiverAccess.create({
+            data: {
+              caregiverId: caregiverUser.id,
+              familyId: family.id,
+              status: 'ACTIVE',
+              grantedAt: new Date(),
+            },
+          })
+        }
+
+        credentials.push({
+          role: `CAREGIVER (${group.platform})`,
+          email: account.email,
+          password: account.password,
+        })
+        continue
+      }
+
+      const user = await db.user.upsert({
+        where: { email: account.email },
+        create: {
+          name: account.name,
+          email: account.email,
+          passwordHash,
+          role: account.role,
+          status: 'ACTIVE',
+          ...cpfFields(account.cpf),
+        },
+        update: { passwordHash, status: 'ACTIVE', name: account.name, role: account.role },
+      })
+
+      const member = await db.familyMember.upsert({
+        where: { userId: user.id },
+        create: {
+          familyId: family.id,
+          userId: user.id,
+          fullNameEncrypted: encryptField(account.name),
+          displayName: account.displayName,
+          relationship: account.relationship,
+          birthDate: new Date(account.birthDate),
+          biologicalSex: account.biologicalSex,
+          isAdmin: account.isAdmin,
+          ...cpfFields(account.cpf),
+        },
+        update: {
+          displayName: account.displayName,
+          isAdmin: account.isAdmin,
+          familyId: family.id,
+        },
+      })
+
+      await db.healthProfile.upsert({
+        where: { memberId: member.id },
+        create: {
+          memberId: member.id,
+          weightKg: 70,
+          heightM: 1.7,
+          bloodType: 'O+',
+          conditions: [],
+          allergies: [],
+        },
+        update: {},
+      })
+
+      credentials.push({
+        role: `${account.role} (${group.platform})`,
+        email: account.email,
+        password: account.password,
+      })
+    }
+  }
+
+  return { credentials }
+}
+

@@ -131,4 +131,24 @@ export const authRepository = {
   async consumePasswordResetToken(id: string) {
     await db.passwordResetToken.update({ where: { id }, data: { consumedAt: new Date() } })
   },
+
+  async acceptProfessionalTerms(
+    userId: string,
+    data: {
+      professionalCommitmentAcceptedAt: Date
+      professionalSecurityPolicyAcceptedAt: Date
+      professionalTermsVersion: string
+    },
+  ) {
+    return db.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        professionalCommitmentAcceptedAt: true,
+        professionalSecurityPolicyAcceptedAt: true,
+        professionalTermsVersion: true,
+      },
+    })
+  },
 }

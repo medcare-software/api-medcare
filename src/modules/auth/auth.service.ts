@@ -18,6 +18,7 @@ import { parseDurationToMs } from '../../shared/utils/index.js'
 import { auditLogsRepository } from '../audit-logs/audit-logs.repository.js'
 import { authRepository } from './auth.repository.js'
 import type { CrmLoginInput, EmailLoginInput, IdentifierLoginInput } from './auth.schema.js'
+import { PROFESSIONAL_TERMS_VERSION } from './auth.schema.js'
 
 const MAX_RESET_CODE_ATTEMPTS = 5
 const LOGIN_AUDIT_THROTTLE_MS = 24 * 60 * 60 * 1000
@@ -379,6 +380,37 @@ export const authService = {
     const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS)
     await authRepository.updatePassword(userId, passwordHash)
     await authRepository.revokeAllUserRefreshTokens(userId)
+  },
+
+  async acceptProfessionalTerms(userId: string, role: string) {
+    if (role !== 'DOCTOR' && role !== 'CLINIC_ADMIN') {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Aceite de termos profissionais disponível apenas para médico e clínica',
+      })
+    }
+
+    const user = await authRepository.findUserById(userId)
+    if (!user) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Usuário não encontrado' })
+    }
+
+    const now = new Date()
+    const updated = await authRepository.acceptProfessionalTerms(userId, {
+      professionalCommitmentAcceptedAt: now,
+      professionalSecurityPolicyAcceptedAt: now,
+      professionalTermsVersion: PROFESSIONAL_TERMS_VERSION,
+    })
+
+    await recordAuditEvent({
+      actorId: userId,
+      action: 'ACCEPT_PROFESSIONAL_TERMS',
+      targetType: 'User',
+      targetId: userId,
+      metadata: { version: PROFESSIONAL_TERMS_VERSION, role },
+    })
+
+    return updated
   },
 }
 

@@ -6,6 +6,7 @@ import { decryptField } from '../../shared/security/index.js'
 import type { RefreshTokenPayload } from '../../shared/types/auth.types.js'
 import { getDeviceLabel } from '../../shared/utils/index.js'
 import {
+  AcceptProfessionalTermsSchema,
   ChangePasswordSchema,
   ForgotPasswordSchema,
   LoginSchema,
@@ -16,6 +17,15 @@ import {
   VerifyResetCodeSchema,
 } from './auth.schema.js'
 import { authService } from './auth.service.js'
+
+function hasAcceptedProfessionalTerms(user: {
+  professionalCommitmentAcceptedAt: Date | null
+  professionalSecurityPolicyAcceptedAt: Date | null
+}) {
+  return Boolean(
+    user.professionalCommitmentAcceptedAt && user.professionalSecurityPolicyAcceptedAt,
+  )
+}
 
 export default async function authRoutes(fastify: FastifyInstance) {
   // POST /auth/login — e-mail (paciente/família/cuidador/clínica/admin) ou CRM (médico)
@@ -45,7 +55,13 @@ export default async function authRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({
       data: {
         ...tokens,
-        user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          professionalTermsAccepted: hasAcceptedProfessionalTerms(user),
+        },
       },
     })
   })
@@ -113,6 +129,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         phone: user.phone,
         cpf: user.cpfEncrypted ? decryptField(user.cpfEncrypted) : null,
         status: user.status,
+        professionalTermsAccepted: hasAcceptedProfessionalTerms(user),
+        professionalTermsVersion: user.professionalTermsVersion,
         doctor: user.doctor
           ? {
               crmNumber: user.doctor.crmNumber,
@@ -131,6 +149,28 @@ export default async function authRoutes(fastify: FastifyInstance) {
       },
     })
   })
+
+  fastify.post(
+    '/auth/accept-professional-terms',
+    { preHandler: [authenticate] },
+    async (req, reply) => {
+      const body = AcceptProfessionalTermsSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      const updated = await authService.acceptProfessionalTerms(req.user.id, req.user.role)
+      return reply.status(200).send({
+        data: {
+          professionalTermsAccepted: hasAcceptedProfessionalTerms(updated),
+          professionalTermsVersion: updated.professionalTermsVersion,
+        },
+      })
+    },
+  )
 
   // POST /auth/forgot-password — envia código de 6 dígitos por e-mail
   fastify.post('/auth/forgot-password', async (req, reply) => {

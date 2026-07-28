@@ -164,6 +164,10 @@ model User {
   status       UserStatus @default(ACTIVE)
   mfaEnabled   Boolean    @default(false)
   lastLoginAt  DateTime?
+  // Aceite dos termos profissionais (médico / admin de clínica) — 1º login no portal
+  professionalCommitmentAcceptedAt    DateTime?
+  professionalSecurityPolicyAcceptedAt DateTime?
+  professionalTermsVersion            String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?

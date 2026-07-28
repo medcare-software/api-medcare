@@ -1,5 +1,14 @@
 import { z } from 'zod'
 
+import { getPasswordPolicyError } from '../../shared/security/password-policy.js'
+
+const strongPassword = z.string().superRefine((value, ctx) => {
+  const error = getPasswordPolicyError(value)
+  if (error) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: error })
+  }
+})
+
 // Login por e-mail — paciente/família/cuidador (app-medcare) e clínica/admin (web-medcare)
 const EmailLoginSchema = z.object({
   email: z.string().email({ message: 'E-mail inválido' }),
@@ -48,7 +57,7 @@ export const VerifyResetCodeSchema = z.object({
 
 export const ResetPasswordSchema = z.object({
   resetSessionToken: z.string().min(1, { message: 'Sessão de recuperação inválida ou expirada' }),
-  newPassword: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
+  newPassword: strongPassword,
 })
 
 // Usado pela página https intermediária (web-medcarelp) antes de redirecionar
@@ -61,8 +70,21 @@ export const ValidateResetSessionSchema = z.object({
 // Troca de senha por quem já está logado (diferente do fluxo de esqueci-senha).
 export const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1, { message: 'Senha atual é obrigatória' }),
-  newPassword: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
+  newPassword: strongPassword,
 })
+
+export const AcceptProfessionalTermsSchema = z.object({
+  commitmentAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É necessário aceitar o Termo de Compromisso' }),
+  }),
+  securityPolicyAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É necessário aceitar a Política de Segurança' }),
+  }),
+})
+
+export type AcceptProfessionalTermsInput = z.infer<typeof AcceptProfessionalTermsSchema>
+
+export const PROFESSIONAL_TERMS_VERSION = 'v1-2026-07-25'
 
 export type EmailLoginInput = z.infer<typeof EmailLoginSchema>
 export type IdentifierLoginInput = z.infer<typeof IdentifierLoginSchema>

@@ -2,4 +2,9 @@ export { recordAuditEvent, recordSensitiveAccess } from './audit.js'
 export { hashForLookup, onlyDigits } from './blind-index.js'
 export { decryptField, encryptField } from './field-encryption.js'
 export { maskCnpj, maskCpf, maskEmail, maskPhone } from './mask.js'
+export {
+  getPasswordPolicyError,
+  isPasswordPolicyValid,
+  PASSWORD_POLICY_RULES,
+} from './password-policy.js'
 export { generateTemporaryPassword } from './temporary-password.js'

@@ -4,7 +4,11 @@ import type { FastifyInstance } from 'fastify'
 import { env } from '../../config/env.js'
 import { resolveClinicId, resolveDoctorId } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
-import { doctorActivationLinkTemplate, sendMail } from '../../shared/mail/index.js'
+import {
+  doctorTemporaryPasswordTemplate,
+  professionalPortalAccessGrantedTemplate,
+  sendMail,
+} from '../../shared/mail/index.js'
 import {
   decryptField,
   encryptField,
@@ -17,8 +21,11 @@ import {
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { computeNextDueDate, omitUndefined } from '../../shared/utils/index.js'
-import { issuePasswordResetLinkToken } from '../auth/auth.service.js'
 import { plansService } from '../plans/plans.service.js'
+
+function doctorPortalLoginUrl() {
+  return env.DOCTOR_ACTIVATION_LINK_BASE_URL.replace(/\/reset-password\/?$/i, '/') || 'https://www.medcaresw.com/'
+}
 import { doctorsRepository } from './doctors.repository.js'
 import type {
   CreateDoctorInput,
@@ -60,7 +67,7 @@ async function resolveScopedDoctor(user: AuthUser, id: string) {
 }
 
 export const doctorsService = {
-  async create(fastify: FastifyInstance, user: AuthUser, input: CreateDoctorInput) {
+  async create(_fastify: FastifyInstance, user: AuthUser, input: CreateDoctorInput) {
     // E-mail já usado por alguém que já tem perfil de médico continua bloqueado.
     // Mas se o e-mail pertence a um User sem perfil de médico (ex.: paciente do
     // app-medcare), o perfil de médico é anexado a esse User existente em vez de
@@ -109,22 +116,17 @@ export const doctorsService = {
         ...(input.planId !== undefined && { planId: input.planId }),
       })
 
-      // Mesmo anexando o perfil de médico a um User já existente (ex.: paciente
-      // do app-medcare), o e-mail de ativação precisa ser enviado — sem isso a
-      // pessoa nunca fica sabendo que ganhou acesso ao portal médico.
+      // Conta já existia (ex.: app) — não sobrescreve a senha; só avisa do portal.
       try {
-        const activationToken = await issuePasswordResetLinkToken(
-          fastify,
-          existingUser.id,
-          env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
-          'doctor',
+        const template = professionalPortalAccessGrantedTemplate(
+          input.name,
+          'médico',
+          doctorPortalLoginUrl(),
         )
-        const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
-        const template = doctorActivationLinkTemplate(link, input.name)
         await sendMail({ to: input.email, ...template })
       } catch (err) {
         const cause = err instanceof Error ? err.message : String(err)
-        console.error(`[doctors] Falha ao enviar e-mail de ativação para ${input.email}: ${cause}`)
+        console.error(`[doctors] Falha ao enviar e-mail de acesso para ${input.email}: ${cause}`)
         await recordAuditEvent({
           actorId: user.id,
           action: 'DOCTOR_ACTIVATION_EMAIL_FAILED',
@@ -134,9 +136,6 @@ export const doctorsService = {
         })
       }
     } else {
-      // Senha temporária nunca é exposta — o médico define a própria senha pelo
-      // link de ativação enviado por e-mail (mesmo mecanismo de
-      // familyMemberActivationLinkTemplate, ver families.service.ts).
       const temporaryPassword = generateTemporaryPassword()
       const passwordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
 
@@ -154,21 +153,15 @@ export const doctorsService = {
       })
 
       try {
-        const activationToken = await issuePasswordResetLinkToken(
-          fastify,
-          doctor.user.id,
-          env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
-          'doctor',
+        const template = doctorTemporaryPasswordTemplate(
+          input.name,
+          temporaryPassword,
+          doctorPortalLoginUrl(),
         )
-        const link = `${env.DOCTOR_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
-        const template = doctorActivationLinkTemplate(link, input.name)
         await sendMail({ to: input.email, ...template })
       } catch (err) {
-        // Best-effort: o cadastro já foi concluído, falha no e-mail não deve
-        // derrubar a request — mas fica registrada em AuditLog (visível na tela
-        // de Auditoria do admin) em vez de só no console.
         const cause = err instanceof Error ? err.message : String(err)
-        console.error(`[doctors] Falha ao enviar e-mail de ativação para ${input.email}: ${cause}`)
+        console.error(`[doctors] Falha ao enviar e-mail de senha para ${input.email}: ${cause}`)
         await recordAuditEvent({
           actorId: user.id,
           action: 'DOCTOR_ACTIVATION_EMAIL_FAILED',
