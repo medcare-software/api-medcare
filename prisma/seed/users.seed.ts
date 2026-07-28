@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
-import { encryptField, hashForLookup, onlyDigits } from '../../src/shared/security/index.js'
+import { encryptField, hashForLookup, onlyDigits } from './load-security.js'
 
 export const SEED_PASSWORD = 'appmedcare123'
 const BCRYPT_ROUNDS = 12

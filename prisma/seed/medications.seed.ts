@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 
-import { encryptField } from '../../src/shared/security/index.js'
+import { encryptField } from './load-security.js'
 
 const FAMILY_ID = 'seed-family-001'
 
