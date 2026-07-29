@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import Fastify from 'fastify'
 
 import { env } from './config/env.js'
+import anvisaMedicationsRoutes from './modules/anvisa-medications/anvisa-medications.routes.js'
 import auditLogsRoutes from './modules/audit-logs/audit-logs.routes.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import caregiverRoutes from './modules/caregiver/caregiver.routes.js'
@@ -129,6 +130,7 @@ export async function buildApp() {
   await app.register(usersRoutes, { prefix: env.API_PREFIX })
   await app.register(employeesRoutes, { prefix: env.API_PREFIX })
   await app.register(labEmailsRoutes, { prefix: env.API_PREFIX })
+  await app.register(anvisaMedicationsRoutes, { prefix: env.API_PREFIX })
   await app.register(auditLogsRoutes, { prefix: env.API_PREFIX })
   await app.register(reportsRoutes, { prefix: env.API_PREFIX })
   await app.register(storeAnalyticsRoutes, { prefix: env.API_PREFIX })
