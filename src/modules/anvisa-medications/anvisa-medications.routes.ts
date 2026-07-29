@@ -5,6 +5,7 @@ import {
   CatalogAnvisaMedicationsQuerySchema,
   ImportAnvisaFieldsSchema,
   ListAnvisaMedicationsQuerySchema,
+  UpdateAnvisaMedicationStatusSchema,
 } from './anvisa-medications.schema.js'
 import { anvisaMedicationsService } from './anvisa-medications.service.js'
 
@@ -27,6 +28,25 @@ export default async function anvisaMedicationsRoutes(fastify: FastifyInstance) 
         data: items,
         meta: { total, page: query.data.page, pageSize: query.data.pageSize },
       })
+    },
+  )
+
+  // PATCH /admin/anvisa-medications/:id — toggle ACTIVE/INACTIVE (não mexe em EXCLUDED)
+  fastify.patch(
+    '/admin/anvisa-medications/:id',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const body = UpdateAnvisaMedicationStatusSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      const updated = await anvisaMedicationsService.updateStatus(req.user, id, body.data)
+      return reply.status(200).send({ data: updated })
     },
   )
 

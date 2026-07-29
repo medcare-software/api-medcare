@@ -8,6 +8,7 @@ import type {
   CatalogAnvisaMedicationsQuery,
   ImportAnvisaFields,
   ListAnvisaMedicationsQuery,
+  UpdateAnvisaMedicationStatusInput,
 } from './anvisa-medications.schema.js'
 
 function fallback(value: string) {
@@ -15,11 +16,20 @@ function fallback(value: string) {
   return trimmed.length > 0 ? trimmed : '-'
 }
 
+function resolveListStatuses(
+  query: ListAnvisaMedicationsQuery,
+): Array<'ACTIVE' | 'INACTIVE' | 'EXCLUDED'> {
+  if (query.status === 'EXCLUDED') return ['EXCLUDED']
+  if (query.activation === 'ACTIVE') return ['ACTIVE']
+  if (query.activation === 'INACTIVE') return ['INACTIVE']
+  return ['ACTIVE', 'INACTIVE']
+}
+
 export const anvisaMedicationsService = {
   async list(query: ListAnvisaMedicationsQuery) {
     const filters = {
       listType: query.listType,
-      ...(query.status && { status: query.status }),
+      statuses: resolveListStatuses(query),
       ...(query.search && { search: query.search }),
     }
     const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
@@ -28,6 +38,31 @@ export const anvisaMedicationsService = {
       anvisaMedicationsRepository.count(filters),
     ])
     return { items, total }
+  },
+
+  async updateStatus(actor: AuthUser, id: string, input: UpdateAnvisaMedicationStatusInput) {
+    const medication = await anvisaMedicationsRepository.findById(id)
+    if (!medication) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Medicamento não encontrado' })
+    }
+    if (medication.status === 'EXCLUDED') {
+      throw new AppError({
+        code: 'VALIDATION_ERROR',
+        message: 'Medicamentos excluídos da ANVISA não podem ser ativados/desativados por toggle',
+      })
+    }
+
+    const updated = await anvisaMedicationsRepository.updateStatus(id, input.status)
+
+    await recordAuditEvent({
+      actorId: actor.id,
+      action: 'UPDATE_ANVISA_MEDICATION_STATUS',
+      targetType: 'AnvisaReferenceMedication',
+      targetId: id,
+      metadata: { from: medication.status, to: input.status },
+    })
+
+    return updated
   },
 
   /** Catálogo para cadastro de novo medicamento — somente ACTIVE. Nunca afeta Medication de prontuário. */
@@ -98,11 +133,12 @@ export const anvisaMedicationsService = {
           exclusionReason: row.exclusionReason,
           status,
           lastImportId: importRecord.id,
+          operation: fields.operation,
         })
 
         if (result === 'created') createdCount += 1
         else updatedCount += 1
-        if (status === 'EXCLUDED') excludedCount += 1
+        if (fields.operation === 'REMOVAL') excludedCount += 1
       }
 
       let deactivatedCount = 0

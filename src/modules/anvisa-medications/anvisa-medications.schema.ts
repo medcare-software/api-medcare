@@ -6,10 +6,17 @@ export const AnvisaImportOperationSchema = z.enum(['ADDITION', 'REMOVAL'])
 
 export const ListAnvisaMedicationsQuerySchema = z.object({
   listType: AnvisaListTypeSchema,
-  status: AnvisaMedicationStatusSchema.optional(),
+  /** EXCLUDED = aba Excluídos; omitido/current = aba Vigentes (ACTIVE+INACTIVE) */
+  status: z.enum(['EXCLUDED']).optional(),
+  /** Filtro de toggle na aba Vigentes */
+  activation: z.enum(['all', 'ACTIVE', 'INACTIVE']).default('all'),
   search: z.string().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
+})
+
+export const UpdateAnvisaMedicationStatusSchema = z.object({
+  status: z.enum(['ACTIVE', 'INACTIVE']),
 })
 
 export const CatalogAnvisaMedicationsQuerySchema = z.object({
@@ -25,5 +32,6 @@ export const ImportAnvisaFieldsSchema = z.object({
 })
 
 export type ListAnvisaMedicationsQuery = z.infer<typeof ListAnvisaMedicationsQuerySchema>
+export type UpdateAnvisaMedicationStatusInput = z.infer<typeof UpdateAnvisaMedicationStatusSchema>
 export type CatalogAnvisaMedicationsQuery = z.infer<typeof CatalogAnvisaMedicationsQuerySchema>
 export type ImportAnvisaFields = z.infer<typeof ImportAnvisaFieldsSchema>

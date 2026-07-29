@@ -10,7 +10,8 @@ import { db } from '../../config/database.js'
 
 type ListFilters = {
   listType: AnvisaListType
-  status?: AnvisaMedicationStatus
+  /** EXCLUDED only, or statuses for vigentes */
+  statuses: AnvisaMedicationStatus[]
   search?: string
 }
 
@@ -30,8 +31,10 @@ export type AnvisaUpsertRow = {
   includedAt: Date | null
   excludedAt: Date | null
   exclusionReason: string | null
+  /** Status desejado no create; no update ADDITION o repo preserva ACTIVE/INACTIVE */
   status: AnvisaMedicationStatus
   lastImportId: string
+  operation: AnvisaImportOperation
 }
 
 function searchWhere(search: string): Prisma.AnvisaReferenceMedicationWhereInput {
@@ -46,27 +49,42 @@ function searchWhere(search: string): Prisma.AnvisaReferenceMedicationWhereInput
   }
 }
 
+function listWhere(filters: ListFilters): Prisma.AnvisaReferenceMedicationWhereInput {
+  return {
+    listType: filters.listType,
+    status: { in: filters.statuses },
+    ...(filters.search && searchWhere(filters.search)),
+  }
+}
+
 export const anvisaMedicationsRepository = {
   findMany(filters: ListFilters, pagination: { skip: number; take: number }) {
     return db.anvisaReferenceMedication.findMany({
-      where: {
-        listType: filters.listType,
-        ...(filters.status && { status: filters.status }),
-        ...(filters.search && searchWhere(filters.search)),
-      },
-      orderBy: [{ substance: 'asc' }, { medicationName: 'asc' }, { concentration: 'asc' }],
+      where: listWhere(filters),
+      // ACTIVE antes de INACTIVE no enum → desativados no final
+      orderBy: [
+        { status: 'asc' },
+        { substance: 'asc' },
+        { medicationName: 'asc' },
+        { concentration: 'asc' },
+      ],
       skip: pagination.skip,
       take: pagination.take,
     })
   },
 
   count(filters: ListFilters) {
-    return db.anvisaReferenceMedication.count({
-      where: {
-        listType: filters.listType,
-        ...(filters.status && { status: filters.status }),
-        ...(filters.search && searchWhere(filters.search)),
-      },
+    return db.anvisaReferenceMedication.count({ where: listWhere(filters) })
+  },
+
+  findById(id: string) {
+    return db.anvisaReferenceMedication.findUnique({ where: { id } })
+  },
+
+  updateStatus(id: string, status: 'ACTIVE' | 'INACTIVE') {
+    return db.anvisaReferenceMedication.update({
+      where: { id },
+      data: { status },
     })
   },
 
@@ -160,10 +178,20 @@ export const anvisaMedicationsRepository = {
           pharmaceuticalForm: row.pharmaceuticalForm,
         },
       },
-      select: { id: true },
+      select: { id: true, status: true },
     })
 
     if (existing) {
+      let nextStatus = row.status
+      if (row.operation === 'ADDITION') {
+        // Preserva toggle ACTIVE/INACTIVE; reinclusão ANVISA a partir de EXCLUDED → ACTIVE
+        if (existing.status === 'ACTIVE' || existing.status === 'INACTIVE') {
+          nextStatus = existing.status
+        } else {
+          nextStatus = 'ACTIVE'
+        }
+      }
+
       await db.anvisaReferenceMedication.update({
         where: { id: existing.id },
         data: {
@@ -171,9 +199,13 @@ export const anvisaMedicationsRepository = {
           holder: row.holder,
           medicationName: row.medicationName,
           ...(row.includedAt ? { includedAt: row.includedAt } : {}),
-          excludedAt: row.excludedAt,
-          exclusionReason: row.exclusionReason,
-          status: row.status,
+          ...(row.operation === 'REMOVAL'
+            ? {
+                excludedAt: row.excludedAt,
+                exclusionReason: row.exclusionReason,
+              }
+            : {}),
+          status: nextStatus,
           lastImportId: row.lastImportId,
         },
       })
