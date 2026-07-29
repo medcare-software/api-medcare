@@ -1011,3 +1011,81 @@ model GmailImportedExam {
   @@index([status])
   @@map("gmail_imported_exams")
 }
+
+// ─────────────────────────────────────────────
+// Catálogo ANVISA (Listas A/B de referência) — admin da plataforma
+// Isolado do Medication de prontuário: inativar/excluir aqui NÃO cascadeia
+// para medicamentos já cadastrados pelo paciente.
+// ─────────────────────────────────────────────
+
+enum AnvisaListType {
+  A
+  B
+}
+
+enum AnvisaMedicationStatus {
+  ACTIVE
+  EXCLUDED
+  INACTIVE
+}
+
+enum AnvisaImportOperation {
+  ADDITION
+  REMOVAL
+}
+
+enum AnvisaImportStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model AnvisaReferenceMedication {
+  id                 String                  @id @default(cuid())
+  listType           AnvisaListType
+  substance          String // fármaco (A) ou associação (B)
+  holder             String // detentor
+  medicationName     String
+  registrationNumber String
+  concentration      String
+  pharmaceuticalForm String
+  includedAt         DateTime?
+  excludedAt         DateTime?
+  exclusionReason    String?
+  status             AnvisaMedicationStatus  @default(ACTIVE)
+  lastImportId       String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  lastImport AnvisaListImport? @relation(fields: [lastImportId], references: [id], onDelete: SetNull)
+
+  @@unique([listType, registrationNumber, concentration, pharmaceuticalForm])
+  @@index([listType, status])
+  @@index([substance])
+  @@index([medicationName])
+  @@index([registrationNumber])
+  @@map("anvisa_reference_medications")
+}
+
+model AnvisaListImport {
+  id                 String                @id @default(cuid())
+  listType           AnvisaListType
+  operation          AnvisaImportOperation
+  fileId             String
+  sourceFilename     String
+  parsedCount        Int                   @default(0)
+  createdCount       Int                   @default(0)
+  updatedCount       Int                   @default(0)
+  deactivatedCount   Int                   @default(0)
+  excludedCount      Int                   @default(0)
+  status             AnvisaImportStatus    @default(PROCESSING)
+  errorMessage       String?
+  uploadedById       String?
+  createdAt          DateTime              @default(now())
+  completedAt        DateTime?
+
+  medications AnvisaReferenceMedication[]
+
+  @@index([listType, createdAt])
+  @@map("anvisa_list_imports")
+}
