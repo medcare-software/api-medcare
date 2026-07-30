@@ -57,6 +57,27 @@ function listWhere(filters: ListFilters): Prisma.AnvisaReferenceMedicationWhereI
   }
 }
 
+function catalogWhere(filters: CatalogFilters): Prisma.AnvisaReferenceMedicationWhereInput {
+  const base: Prisma.AnvisaReferenceMedicationWhereInput = {
+    status: 'ACTIVE',
+    ...(filters.listType && { listType: filters.listType }),
+  }
+  if (!filters.search) return base
+
+  // Só medicationName — substance/composição não entra (evita "dipirona" trazer associações).
+  const search = filters.search.trim()
+  const prefix = search.slice(0, Math.min(3, search.length))
+  return {
+    ...base,
+    OR: [
+      { medicationName: { contains: search, mode: 'insensitive' } },
+      ...(prefix.length >= 2
+        ? [{ medicationName: { startsWith: prefix, mode: 'insensitive' as const } }]
+        : []),
+    ],
+  }
+}
+
 export const anvisaMedicationsRepository = {
   findMany(filters: ListFilters, pagination: { skip: number; take: number }) {
     return db.anvisaReferenceMedication.findMany({
@@ -90,11 +111,7 @@ export const anvisaMedicationsRepository = {
 
   findCatalog(filters: CatalogFilters, pagination: { skip: number; take: number }) {
     return db.anvisaReferenceMedication.findMany({
-      where: {
-        status: 'ACTIVE',
-        ...(filters.listType && { listType: filters.listType }),
-        ...(filters.search && searchWhere(filters.search)),
-      },
+      where: catalogWhere(filters),
       orderBy: [{ medicationName: 'asc' }, { concentration: 'asc' }],
       skip: pagination.skip,
       take: pagination.take,
@@ -111,13 +128,28 @@ export const anvisaMedicationsRepository = {
     })
   },
 
+  /** Pool maior pra ranking fuzzy no service (sem skip de página). */
+  findCatalogCandidates(filters: CatalogFilters, take: number) {
+    return db.anvisaReferenceMedication.findMany({
+      where: catalogWhere(filters),
+      orderBy: [{ medicationName: 'asc' }, { concentration: 'asc' }],
+      take,
+      select: {
+        id: true,
+        listType: true,
+        substance: true,
+        holder: true,
+        medicationName: true,
+        registrationNumber: true,
+        concentration: true,
+        pharmaceuticalForm: true,
+      },
+    })
+  },
+
   countCatalog(filters: CatalogFilters) {
     return db.anvisaReferenceMedication.count({
-      where: {
-        status: 'ACTIVE',
-        ...(filters.listType && { listType: filters.listType }),
-        ...(filters.search && searchWhere(filters.search)),
-      },
+      where: catalogWhere(filters),
     })
   },
 

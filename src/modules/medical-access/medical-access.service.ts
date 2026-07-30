@@ -44,18 +44,23 @@ export const medicalAccessService = {
       expiresAt,
     })
 
-    // Confirmação pra quem concedeu — o model é anônimo até o resgate (o código ainda
-    // não tem um médico/cuidador associado), então o conteúdo referencia o membro, não
-    // "quem recebeu" (isso só se sabe depois que o código for resgatado).
-    const member = await db.familyMember.findUnique({
-      where: { id: input.memberId },
-      select: { displayName: true },
-    })
-    await sendPushToUser(user.id, {
-      title: 'Acesso concedido',
-      body: `Código de acesso gerado para ${member?.displayName ?? 'um membro da família'}.`,
-      data: { type: 'medical-access-granted', grantId: grant.id },
-    })
+    // Confirmação pra quem concedeu — fire-and-forget: não atrasa o 201 nem
+    // mascara falha de push/Expo como "Sem conexão" no app após o grant já gravado.
+    void db.familyMember
+      .findUnique({
+        where: { id: input.memberId },
+        select: { displayName: true },
+      })
+      .then((member) =>
+        sendPushToUser(user.id, {
+          title: 'Acesso concedido',
+          body: `Código de acesso gerado para ${member?.displayName ?? 'um membro da família'}.`,
+          data: { type: 'medical-access-granted', grantId: grant.id },
+        }),
+      )
+      .catch((err) => {
+        console.error('[medical-access] falha ao notificar grant criado', err)
+      })
 
     // Código em texto plano só existe nesta resposta — nunca é persistido (só codeHash acima).
     return { id: grant.id, code, expiresAt: grant.expiresAt, validity: grant.validity }

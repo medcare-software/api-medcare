@@ -2,6 +2,7 @@ import { AppError } from '../../shared/errors/index.js'
 import { recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { filesService } from '../files/files.service.js'
+import { scoreMedicationName } from './anvisa-medications.fuzzy.js'
 import { naturalKey, parseAnvisaPdf } from './anvisa-medications.parser.js'
 import { anvisaMedicationsRepository } from './anvisa-medications.repository.js'
 import type {
@@ -71,11 +72,35 @@ export const anvisaMedicationsService = {
       ...(query.listType && { listType: query.listType }),
       ...(query.search && { search: query.search }),
     }
-    const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
-    const [items, total] = await Promise.all([
-      anvisaMedicationsRepository.findCatalog(filters, pagination),
-      anvisaMedicationsRepository.countCatalog(filters),
-    ])
+
+    // Sem busca: listagem paginada simples.
+    if (!query.search?.trim()) {
+      const pagination = { skip: (query.page - 1) * query.pageSize, take: query.pageSize }
+      const [items, total] = await Promise.all([
+        anvisaMedicationsRepository.findCatalog(filters, pagination),
+        anvisaMedicationsRepository.countCatalog(filters),
+      ])
+      return { items, total }
+    }
+
+    // Com busca: pool maior + ranking fuzzy (typos PT) antes de paginar.
+    const candidates = await anvisaMedicationsRepository.findCatalogCandidates(filters, 250)
+    const ranked = candidates
+      .map((item) => ({
+        item,
+        score: scoreMedicationName(query.search!, item.medicationName),
+      }))
+      .filter((row) => Number.isFinite(row.score))
+      .sort((a, b) => {
+        if (a.score !== b.score) return a.score - b.score
+        const byName = a.item.medicationName.localeCompare(b.item.medicationName, 'pt-BR')
+        if (byName !== 0) return byName
+        return a.item.concentration.localeCompare(b.item.concentration, 'pt-BR')
+      })
+
+    const total = ranked.length
+    const start = (query.page - 1) * query.pageSize
+    const items = ranked.slice(start, start + query.pageSize).map((row) => row.item)
     return { items, total }
   },
 
