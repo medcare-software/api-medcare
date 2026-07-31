@@ -12,8 +12,12 @@ function isValidCalendarDate(v: string): boolean {
   if (!match) return true
 
   const [, year, month, day] = match
+  const y = Number(year)
+  // Mesmo intervalo do app (isValidBrDate) — rejeita anos absurdo tipo 0226.
+  if (y < 1900 || y > 2100) return false
+
   return (
-    parsed.getUTCFullYear() === Number(year) &&
+    parsed.getUTCFullYear() === y &&
     parsed.getUTCMonth() + 1 === Number(month) &&
     parsed.getUTCDate() === Number(day)
   )

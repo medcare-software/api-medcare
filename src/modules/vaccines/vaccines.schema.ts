@@ -37,6 +37,13 @@ export const RecordVaccineDoseSchema = z
     message: 'Data de aplicação não pode estar no futuro',
     path: ['appliedAt'],
   })
+  .refine(
+    (data) => !data.nextBoosterAt || data.nextBoosterAt.getTime() > data.appliedAt.getTime(),
+    {
+      message: 'Data do próximo reforço deve ser posterior à data de aplicação',
+      path: ['nextBoosterAt'],
+    },
+  )
 
 export type CreateVaccineInput = z.infer<typeof CreateVaccineSchema>
 export type UpdateVaccineInput = z.infer<typeof UpdateVaccineSchema>

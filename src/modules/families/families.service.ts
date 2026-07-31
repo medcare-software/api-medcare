@@ -129,11 +129,8 @@ export const familiesService = {
   // Escrita restrita a PATIENT_ADMIN — reforça que um morador (FamilyMember sem
   // login próprio) nunca edita os próprios dados.
   //
-  // Quando input.email está presente, cria também um User(role=FAMILY_MEMBER)
-  // linkado — o membro ganha login próprio e recebe um e-mail com link de
-  // ativação (define a senha reaproveitando o mesmo JWT/tela de "esqueci senha").
-  // Sem email, mantém o comportamento de sempre: FamilyMember sem userId
-  // (dependente sem login, ex. um filho pequeno).
+  // Sempre cria User(role=FAMILY_MEMBER) linkado + e-mail de ativação
+  // (define a senha reaproveitando o mesmo JWT/tela de "esqueci senha").
   async createMember(
     fastify: FastifyInstance,
     user: AuthUser,
@@ -143,36 +140,14 @@ export const familiesService = {
     assertFamilyWriter(user)
     await assertOwnFamilyInScope(user, familyId)
 
-    if (input.email) {
-      const created = await createMemberWithLogin(fastify, user, familyId, {
-        ...input,
-        email: input.email,
-      })
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'CREATE_FAMILY_MEMBER',
-        targetType: 'FamilyMember',
-        targetId: created.id,
-      })
-      return created
-    }
-
-    const cpfFields = await resolveCpfFields(input.cpf)
-    const member = await familiesRepository.createMember(familyId, {
-      fullNameEncrypted: encryptField(input.fullName),
-      displayName: input.displayName,
-      relationship: input.relationship,
-      birthDate: input.birthDate,
-      ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
-      ...cpfFields,
-    })
+    const created = await createMemberWithLogin(fastify, user, familyId, input)
     await recordAuditEvent({
       actorId: user.id,
       action: 'CREATE_FAMILY_MEMBER',
       targetType: 'FamilyMember',
-      targetId: member.id,
+      targetId: created.id,
     })
-    return toMemberDetail(member, user.role)
+    return created
   },
 
   async updateMember(user: AuthUser, id: string, input: UpdateFamilyMemberInput) {
@@ -278,14 +253,12 @@ export const familiesService = {
   },
 }
 
-// input.email presente implica input.cpf presente (CreateFamilyMemberSchema.superRefine
-// já garante isso em runtime) — a checagem abaixo é defesa em profundidade (mesmo
-// padrão de resolveCpfFields), não confiança cega na validação de schema.
+// email + cpf são obrigatórios no CreateFamilyMemberSchema.
 async function createMemberWithLogin(
   fastify: FastifyInstance,
   user: AuthUser,
   familyId: string,
-  input: CreateFamilyMemberInput & { email: string },
+  input: CreateFamilyMemberInput,
 ) {
   if (!input.cpf) {
     throw new AppError({

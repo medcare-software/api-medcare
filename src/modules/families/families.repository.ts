@@ -29,8 +29,8 @@ type CreateFamilyMemberData = {
   cpfHash?: string
 }
 
-// CPF sempre presente aqui — o schema (CreateFamilyMemberSchema.superRefine)
-// garante cpf junto de email antes de chegar no service/repository.
+// CPF sempre presente aqui — o schema (CreateFamilyMemberSchema) exige
+// email + cpf no create com login.
 type CreateFamilyMemberWithUserData = Omit<CreateFamilyMemberData, 'cpfEncrypted' | 'cpfHash'> & {
   cpfEncrypted: Buffer<ArrayBuffer>
   cpfHash: string

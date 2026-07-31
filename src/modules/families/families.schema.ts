@@ -20,9 +20,8 @@ export const RegisterSchema = z.object({
   biologicalSex: BiologicalSexEnum.optional(),
 })
 
-// Sem o .superRefine — base compartilhada com UpdateFamilyMemberSchema, que não
-// deve herdar a regra de "cpf obrigatório com email" (edição parcial de membro
-// já existente não é o escopo do requisito de criar login).
+// Sem o .superRefine — base compartilhada com UpdateFamilyMemberSchema.
+// Create exige email + CPF (login sempre criado). Update permanece parcial.
 const CreateFamilyMemberFields = z.object({
   fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
   displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
@@ -32,21 +31,12 @@ const CreateFamilyMemberFields = z.object({
     futureMessage: 'Data de nascimento não pode ser no futuro',
   }),
   biologicalSex: BiologicalSexEnum.optional(),
-  cpf: z.string().min(11, { message: 'CPF inválido' }).optional(),
-  // Quando informado, o membro ganha login próprio (User com role FAMILY_MEMBER)
-  // e recebe um e-mail com link para definir a senha — ver families.service.ts.
-  email: z.string().email({ message: 'E-mail inválido' }).optional(),
+  cpf: z.string().min(11, { message: 'CPF inválido' }),
+  // Membro sempre ganha login próprio (User FAMILY_MEMBER) + e-mail de ativação.
+  email: z.string().email({ message: 'E-mail inválido' }),
 })
 
-export const CreateFamilyMemberSchema = CreateFamilyMemberFields.superRefine((data, ctx) => {
-  if (data.email && !data.cpf) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['cpf'],
-      message: 'CPF é obrigatório para criar login com e-mail',
-    })
-  }
-})
+export const CreateFamilyMemberSchema = CreateFamilyMemberFields
 
 export const UpdateFamilyMemberSchema = CreateFamilyMemberFields.partial().extend({
   isAdmin: z.boolean().optional(),
