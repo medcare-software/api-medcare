@@ -27,6 +27,7 @@ export function passwordResetCodeTemplate(code: string, ttlMinutes: number) {
   })
 }
 
+/** @deprecated Prefer familyMemberTemporaryPasswordTemplate */
 export function familyMemberActivationLinkTemplate(link: string, memberName: string) {
   return withNoreply({
     subject: 'Você foi adicionado a uma família no Medcare — defina sua senha',
@@ -37,6 +38,25 @@ export function familyMemberActivationLinkTemplate(link: string, memberName: str
       <p>Para acessar o app, toque no botão abaixo no seu celular (com o app Medcare instalado) e defina sua senha:</p>
       <p><a href="${link}" style="display:inline-block;padding:12px 24px;background:#1e40af;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Definir minha senha</a></p>
       <p>Se o botão não funcionar, copie e cole este link no seu celular: ${link}</p>
+      <p>Se você não esperava este e-mail, ignore-o.</p>
+    `,
+  })
+}
+
+export function familyMemberTemporaryPasswordTemplate(
+  memberName: string,
+  temporaryPassword: string,
+) {
+  return withNoreply({
+    subject: 'Bem-vindo ao Medcare — sua senha de acesso',
+    text: `Olá, ${memberName}! Você foi cadastrado como membro de uma família no Medcare. Sua senha temporária é ${temporaryPassword}. Use o e-mail e essa senha para entrar no app Medcare. Você pode manter essa senha ou alterá-la pelo fluxo "Esqueci a senha". Se você não esperava este e-mail, ignore-o.`,
+    html: `
+      <p>Olá, ${memberName}!</p>
+      <p>Você foi cadastrado como membro de uma família no Medcare.</p>
+      <p>Sua senha temporária é:</p>
+      <p style="font-size:22px;font-weight:bold;letter-spacing:1px;">${temporaryPassword}</p>
+      <p>Use o e-mail e essa senha para entrar no app Medcare.</p>
+      <p>Você pode manter essa senha ou alterá-la pelo fluxo &ldquo;Esqueci a senha&rdquo;.</p>
       <p>Se você não esperava este e-mail, ignore-o.</p>
     `,
   })

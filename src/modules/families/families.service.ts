@@ -1,5 +1,3 @@
-import crypto from 'node:crypto'
-
 import type { FamilyMember, HealthProfile, Role } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import type { FastifyInstance } from 'fastify'
@@ -13,18 +11,18 @@ import {
   resolveOwnMemberId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
-import { familyMemberActivationLinkTemplate, sendMail } from '../../shared/mail/index.js'
+import { familyMemberTemporaryPasswordTemplate, sendMail } from '../../shared/mail/index.js'
 import { sendPushToUser } from '../../shared/push/index.js'
 import {
   decryptField,
   encryptField,
+  generateTemporaryPassword,
   hashForLookup,
   maskCpf,
   onlyDigits,
   recordAuditEvent,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
-import { issuePasswordResetLinkToken } from '../auth/auth.service.js'
 import { familiesRepository } from './families.repository.js'
 import type {
   CreateFamilyMemberInput,
@@ -333,10 +331,8 @@ async function createMemberWithLogin(
     return { ...toMemberDetail(member, user.role), activationEmailSent: false as const }
   }
 
-  // Senha inutilizável — só existe para satisfazer a constraint NOT NULL até o
-  // membro definir a senha real pelo link de ativação. Nunca logada/exposta.
-  const placeholderPassword = crypto.randomBytes(32).toString('hex')
-  const passwordHash = await bcrypt.hash(placeholderPassword, env.BCRYPT_ROUNDS)
+  const temporaryPassword = generateTemporaryPassword()
+  const passwordHash = await bcrypt.hash(temporaryPassword, env.BCRYPT_ROUNDS)
 
   const { user: newUser, member } = await familiesRepository.createMemberWithUser(familyId, {
     email: input.email,
@@ -344,14 +340,7 @@ async function createMemberWithLogin(
     ...memberFields,
   })
 
-  const activationToken = await issuePasswordResetLinkToken(
-    fastify,
-    newUser.id,
-    env.FAMILY_MEMBER_ACTIVATION_TOKEN_EXPIRES_IN,
-    'app',
-  )
-  const link = `${env.FAMILY_MEMBER_ACTIVATION_LINK_BASE_URL}?token=${activationToken}`
-  const template = familyMemberActivationLinkTemplate(link, input.displayName)
+  const template = familyMemberTemporaryPasswordTemplate(input.displayName, temporaryPassword)
 
   // Não await SMTP: o relay pode levar vários segundos e o proxy (Railway) corta a
   // HTTP antes do 201 — o app fica em loading eterno mesmo com o e-mail aceito.
@@ -359,7 +348,7 @@ async function createMemberWithLogin(
     const cause = err instanceof Error ? err.message : String(err)
     fastify.log.error(
       { err, userId: newUser.id, email: newUser.email },
-      'Falha ao enviar e-mail de ativação do membro familiar',
+      'Falha ao enviar e-mail de senha temporária do membro familiar',
     )
     await recordAuditEvent({
       actorId: user.id,

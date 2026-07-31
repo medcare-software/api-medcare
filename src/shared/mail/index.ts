@@ -8,6 +8,7 @@ export {
   doctorTemporaryPasswordTemplate,
   employeeActivationLinkTemplate,
   familyMemberActivationLinkTemplate,
+  familyMemberTemporaryPasswordTemplate,
   passwordResetCodeTemplate,
   professionalPortalAccessGrantedTemplate,
 } from './templates.js'
