@@ -138,6 +138,9 @@ export const authRepository = {
       professionalCommitmentAcceptedAt: Date
       professionalSecurityPolicyAcceptedAt: Date
       professionalTermsVersion: string
+      termsOfUseAcceptedAt: Date
+      privacyPolicyAcceptedAt: Date
+      consumerTermsVersion: string
     },
   ) {
     return db.user.update({
@@ -148,6 +151,9 @@ export const authRepository = {
         professionalCommitmentAcceptedAt: true,
         professionalSecurityPolicyAcceptedAt: true,
         professionalTermsVersion: true,
+        termsOfUseAcceptedAt: true,
+        privacyPolicyAcceptedAt: true,
+        consumerTermsVersion: true,
       },
     })
   },

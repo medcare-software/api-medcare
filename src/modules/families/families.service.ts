@@ -23,6 +23,7 @@ import {
   recordAuditEvent,
 } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
+import { CONSUMER_TERMS_VERSION } from '../legal/legal.service.js'
 import { familiesRepository } from './families.repository.js'
 import type {
   CreateFamilyMemberInput,
@@ -78,6 +79,8 @@ export const familiesService = {
       })
     }
 
+    const now = new Date()
+
     const adminData = {
       email: input.email,
       passwordHash,
@@ -91,6 +94,10 @@ export const familiesService = {
       displayName: input.displayName,
       birthDate: input.birthDate,
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
+      termsOfUseAcceptedAt: now,
+      privacyPolicyAcceptedAt: now,
+      lgpdConsentAcceptedAt: now,
+      consumerTermsVersion: CONSUMER_TERMS_VERSION,
     }
 
     // Prestador (médico/clínica) sem família no app — vira admin familiar no mesmo User.

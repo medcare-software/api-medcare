@@ -3,6 +3,13 @@ import type { BiologicalSex, Role } from '@prisma/client'
 import { db } from '../../config/database.js'
 import { familyNameFromFullName, omitUndefined } from '../../shared/utils/index.js'
 
+type ConsumerTermsAcceptance = {
+  termsOfUseAcceptedAt: Date
+  privacyPolicyAcceptedAt: Date
+  lgpdConsentAcceptedAt: Date
+  consumerTermsVersion: string
+}
+
 type CreateFamilyWithAdminData = {
   email: string
   passwordHash: string
@@ -17,7 +24,7 @@ type CreateFamilyWithAdminData = {
   displayName: string
   birthDate: Date
   biologicalSex?: BiologicalSex
-}
+} & ConsumerTermsAcceptance
 
 type CreateFamilyMemberData = {
   fullNameEncrypted: Buffer<ArrayBuffer>
@@ -97,6 +104,10 @@ export const familiesRepository = {
           cpfEncrypted: input.cpfEncrypted,
           cpfHash: input.cpfHash,
           status: 'ACTIVE',
+          termsOfUseAcceptedAt: input.termsOfUseAcceptedAt,
+          privacyPolicyAcceptedAt: input.privacyPolicyAcceptedAt,
+          lgpdConsentAcceptedAt: input.lgpdConsentAcceptedAt,
+          consumerTermsVersion: input.consumerTermsVersion,
         }),
       })
 
@@ -142,6 +153,10 @@ export const familiesRepository = {
           cpfEncrypted: input.cpfEncrypted,
           cpfHash: input.cpfHash,
           name: input.fullName,
+          termsOfUseAcceptedAt: input.termsOfUseAcceptedAt,
+          privacyPolicyAcceptedAt: input.privacyPolicyAcceptedAt,
+          lgpdConsentAcceptedAt: input.lgpdConsentAcceptedAt,
+          consumerTermsVersion: input.consumerTermsVersion,
         }),
       })
 

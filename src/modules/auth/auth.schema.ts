@@ -80,6 +80,12 @@ export const AcceptProfessionalTermsSchema = z.object({
   securityPolicyAccepted: z.literal(true, {
     errorMap: () => ({ message: 'É necessário aceitar a Política de Segurança' }),
   }),
+  termsOfUseAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É necessário aceitar os Termos de Uso' }),
+  }),
+  privacyPolicyAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É necessário aceitar a Política de Privacidade' }),
+  }),
 })
 
 export type AcceptProfessionalTermsInput = z.infer<typeof AcceptProfessionalTermsSchema>

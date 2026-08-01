@@ -27,6 +27,13 @@ function hasAcceptedProfessionalTerms(user: {
   )
 }
 
+function hasAcceptedConsumerTerms(user: {
+  termsOfUseAcceptedAt: Date | null
+  privacyPolicyAcceptedAt: Date | null
+}) {
+  return Boolean(user.termsOfUseAcceptedAt && user.privacyPolicyAcceptedAt)
+}
+
 export default async function authRoutes(fastify: FastifyInstance) {
   // POST /auth/login — e-mail (paciente/família/cuidador/clínica/admin) ou CRM (médico)
   fastify.post('/auth/login', async (req, reply) => {
@@ -61,6 +68,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           email: user.email,
           role: user.role,
           professionalTermsAccepted: hasAcceptedProfessionalTerms(user),
+          consumerTermsAccepted: hasAcceptedConsumerTerms(user),
         },
       },
     })
@@ -131,6 +139,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         status: user.status,
         professionalTermsAccepted: hasAcceptedProfessionalTerms(user),
         professionalTermsVersion: user.professionalTermsVersion,
+        consumerTermsAccepted: hasAcceptedConsumerTerms(user),
+        consumerTermsVersion: user.consumerTermsVersion,
         doctor: user.doctor
           ? {
               crmNumber: user.doctor.crmNumber,
@@ -167,6 +177,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         data: {
           professionalTermsAccepted: hasAcceptedProfessionalTerms(updated),
           professionalTermsVersion: updated.professionalTermsVersion,
+          consumerTermsAccepted: hasAcceptedConsumerTerms(updated),
+          consumerTermsVersion: updated.consumerTermsVersion,
         },
       })
     },

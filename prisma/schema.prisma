@@ -168,6 +168,11 @@ model User {
   professionalCommitmentAcceptedAt    DateTime?
   professionalSecurityPolicyAcceptedAt DateTime?
   professionalTermsVersion            String?
+  // Aceite dos termos do consumidor (ToS + privacidade; LGPD no cadastro do app)
+  termsOfUseAcceptedAt                DateTime?
+  privacyPolicyAcceptedAt             DateTime?
+  lgpdConsentAcceptedAt               DateTime?
+  consumerTermsVersion                String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?

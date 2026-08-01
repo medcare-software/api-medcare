@@ -18,6 +18,15 @@ export const RegisterSchema = z.object({
     futureMessage: 'Data de nascimento não pode ser no futuro',
   }),
   biologicalSex: BiologicalSexEnum.optional(),
+  termsOfUseAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É necessário aceitar os Termos de Uso' }),
+  }),
+  privacyPolicyAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É necessário aceitar a Política de Privacidade' }),
+  }),
+  lgpdConsentAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É necessário autorizar o processamento de dados conforme a LGPD' }),
+  }),
 })
 
 // Sem o .superRefine — base compartilhada com UpdateFamilyMemberSchema.

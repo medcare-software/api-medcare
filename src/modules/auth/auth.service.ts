@@ -18,6 +18,7 @@ import { parseDurationToMs } from '../../shared/utils/index.js'
 import { auditLogsRepository } from '../audit-logs/audit-logs.repository.js'
 import { authRepository } from './auth.repository.js'
 import type { CrmLoginInput, EmailLoginInput, IdentifierLoginInput } from './auth.schema.js'
+import { CONSUMER_TERMS_VERSION } from '../legal/legal.service.js'
 import { PROFESSIONAL_TERMS_VERSION } from './auth.schema.js'
 
 const MAX_RESET_CODE_ATTEMPTS = 5
@@ -400,6 +401,9 @@ export const authService = {
       professionalCommitmentAcceptedAt: now,
       professionalSecurityPolicyAcceptedAt: now,
       professionalTermsVersion: PROFESSIONAL_TERMS_VERSION,
+      termsOfUseAcceptedAt: now,
+      privacyPolicyAcceptedAt: now,
+      consumerTermsVersion: CONSUMER_TERMS_VERSION,
     })
 
     await recordAuditEvent({
@@ -407,7 +411,11 @@ export const authService = {
       action: 'ACCEPT_PROFESSIONAL_TERMS',
       targetType: 'User',
       targetId: userId,
-      metadata: { version: PROFESSIONAL_TERMS_VERSION, role },
+      metadata: {
+        professionalVersion: PROFESSIONAL_TERMS_VERSION,
+        consumerVersion: CONSUMER_TERMS_VERSION,
+        role,
+      },
     })
 
     return updated
