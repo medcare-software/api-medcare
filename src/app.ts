@@ -20,6 +20,7 @@ import financialRoutes from './modules/financial/financial.routes.js'
 import gmailImportRoutes from './modules/gmail-import/gmail-import.routes.js'
 import gmailIntegrationRoutes from './modules/gmail-integration/gmail-integration.routes.js'
 import labEmailsRoutes from './modules/lab-emails/lab-emails.routes.js'
+import legalRoutes from './modules/legal/legal.routes.js'
 import medicalAccessRoutes from './modules/medical-access/medical-access.routes.js'
 import medicationRiskCheckRoutes from './modules/medication-risk-check/medication-risk-check.routes.js'
 import medicationScanRoutes from './modules/medication-scan/medication-scan.routes.js'
@@ -104,6 +105,7 @@ export async function buildApp() {
 
   // ── Módulos ───────────────────────────────────────────────────────────────
   await app.register(authRoutes, { prefix: env.API_PREFIX })
+  await app.register(legalRoutes, { prefix: env.API_PREFIX })
   await app.register(familiesRoutes, { prefix: env.API_PREFIX })
   await app.register(caregiverRoutes, { prefix: env.API_PREFIX })
   await app.register(doctorsRoutes, { prefix: env.API_PREFIX })
