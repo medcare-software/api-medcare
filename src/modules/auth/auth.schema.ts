@@ -73,6 +73,11 @@ export const ChangePasswordSchema = z.object({
   newPassword: strongPassword,
 })
 
+// Exclusão da própria conta (app-medcare) — exige senha atual.
+export const DeleteAccountSchema = z.object({
+  password: z.string().min(1, { message: 'Senha é obrigatória' }),
+})
+
 export const AcceptProfessionalTermsSchema = z.object({
   commitmentAccepted: z.literal(true, {
     errorMap: () => ({ message: 'É necessário aceitar o Termo de Compromisso' }),
@@ -103,3 +108,4 @@ export type VerifyResetCodeInput = z.infer<typeof VerifyResetCodeSchema>
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>
 export type ValidateResetSessionInput = z.infer<typeof ValidateResetSessionSchema>
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>
+export type DeleteAccountInput = z.infer<typeof DeleteAccountSchema>

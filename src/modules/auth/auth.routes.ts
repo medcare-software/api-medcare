@@ -1,13 +1,14 @@
 import type { FastifyInstance } from 'fastify'
 
 import { issueTokens } from '../../shared/auth/issue-tokens.js'
-import { authenticate } from '../../shared/middlewares/index.js'
+import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import { decryptField } from '../../shared/security/index.js'
 import type { RefreshTokenPayload } from '../../shared/types/auth.types.js'
 import { getDeviceLabel } from '../../shared/utils/index.js'
 import {
   AcceptProfessionalTermsSchema,
   ChangePasswordSchema,
+  DeleteAccountSchema,
   ForgotPasswordSchema,
   LoginSchema,
   LogoutSchema,
@@ -254,4 +255,37 @@ export default async function authRoutes(fastify: FastifyInstance) {
     await authService.changePassword(req.user.id, body.data.currentPassword, body.data.newPassword)
     return reply.status(204).send()
   })
+
+  // DELETE /auth/account — soft-delete da própria conta (app). PATIENT_ADMIN
+  // cascateia a família; FAMILY_MEMBER/CAREGIVER só a si mesmos.
+  // Senha pode vir no body JSON ou em `?password=` — no React Native o body de
+  // DELETE pode ser ignorado pelo XHR (mesmo padrão de DELETE /medications/:id).
+  fastify.delete(
+    '/auth/account',
+    {
+      preHandler: [authenticate, authorize('PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER')],
+    },
+    async (req, reply) => {
+      const bodyPassword =
+        req.body && typeof req.body === 'object' && 'password' in req.body
+          ? (req.body as { password?: unknown }).password
+          : undefined
+      const queryPassword =
+        req.query && typeof req.query === 'object' && 'password' in req.query
+          ? (req.query as { password?: unknown }).password
+          : undefined
+      const body = DeleteAccountSchema.safeParse({
+        password: bodyPassword ?? queryPassword,
+      })
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      await authService.deleteAccount(req.user.id, req.user.role, body.data.password)
+      return reply.status(204).send()
+    },
+  )
 }

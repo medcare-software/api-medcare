@@ -16,10 +16,14 @@ import type {
 } from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
 import { auditLogsRepository } from '../audit-logs/audit-logs.repository.js'
+import { familiesRepository } from '../families/families.repository.js'
+import { medicalAccessRepository } from '../medical-access/medical-access.repository.js'
 import { authRepository } from './auth.repository.js'
 import type { CrmLoginInput, EmailLoginInput, IdentifierLoginInput } from './auth.schema.js'
 import { CONSUMER_TERMS_VERSION } from '../legal/legal.service.js'
 import { PROFESSIONAL_TERMS_VERSION } from './auth.schema.js'
+
+const APP_DELETE_ROLES: Role[] = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER']
 
 const MAX_RESET_CODE_ATTEMPTS = 5
 const LOGIN_AUDIT_THROTTLE_MS = 24 * 60 * 60 * 1000
@@ -381,6 +385,81 @@ export const authService = {
     const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS)
     await authRepository.updatePassword(userId, passwordHash)
     await authRepository.revokeAllUserRefreshTokens(userId)
+  },
+
+  // Soft-delete da própria conta (app). PATIENT_ADMIN cascateia toda a família;
+  // FAMILY_MEMBER e CAREGIVER só a si mesmos.
+  async deleteAccount(userId: string, role: Role, password: string): Promise<void> {
+    if (!APP_DELETE_ROLES.includes(role)) {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message: 'Exclusão de conta disponível apenas no aplicativo',
+      })
+    }
+
+    const user = await authRepository.findUserById(userId)
+    if (!user) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Usuário não encontrado' })
+    }
+
+    const matches = await bcrypt.compare(password, user.passwordHash)
+    if (!matches) {
+      throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Senha incorreta' })
+    }
+
+    if (role === 'PATIENT_ADMIN') {
+      const familyId = user.familyMember?.familyId
+      if (familyId) {
+        const members = await familiesRepository.findManyByFamilyId(familyId)
+        const memberIds = members.map((m) => m.id)
+        // Remove grants de médicos/clínicas antes do soft-delete dos members
+        // (soft-delete não dispara onDelete Cascade).
+        await medicalAccessRepository.deleteManyByMemberIds(memberIds)
+        for (const member of members) {
+          await familiesRepository.softDeleteMember(member.id, member.userId)
+        }
+        await authRepository.revokeFamilyCaregiverLinks(familyId)
+      }
+      // Garante soft-delete do User mesmo se não havia FamilyMember (edge case)
+      // ou se softDeleteMember só revogou tokens (prestador multi-papel).
+      await authRepository.softDeleteAppUser(userId)
+      await recordAuditEvent({
+        actorId: userId,
+        action: 'DELETE_ACCOUNT',
+        targetType: 'User',
+        targetId: userId,
+        metadata: { role, familyId: familyId ?? null, cascadeFamily: Boolean(familyId) },
+      })
+      return
+    }
+
+    if (role === 'FAMILY_MEMBER') {
+      if (user.familyMember) {
+        await medicalAccessRepository.deleteManyByMemberIds([user.familyMember.id])
+        await familiesRepository.softDeleteMember(user.familyMember.id, userId)
+      } else {
+        await authRepository.softDeleteAppUser(userId)
+      }
+      await recordAuditEvent({
+        actorId: userId,
+        action: 'DELETE_ACCOUNT',
+        targetType: 'User',
+        targetId: userId,
+        metadata: { role },
+      })
+      return
+    }
+
+    // CAREGIVER
+    await authRepository.revokeCaregiverAccessesByUser(userId)
+    await authRepository.softDeleteAppUser(userId)
+    await recordAuditEvent({
+      actorId: userId,
+      action: 'DELETE_ACCOUNT',
+      targetType: 'User',
+      targetId: userId,
+      metadata: { role },
+    })
   },
 
   async acceptProfessionalTerms(userId: string, role: string) {

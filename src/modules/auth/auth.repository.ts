@@ -157,4 +157,70 @@ export const authRepository = {
       },
     })
   },
+
+  // Soft-delete de User do app. Se ainda é prestador (Doctor/ClinicAdmin), só
+  // revoga sessões — o portal web continua com o mesmo e-mail.
+  async softDeleteAppUser(userId: string) {
+    const now = new Date()
+    return db.$transaction(async (tx) => {
+      const linked = await tx.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        include: {
+          doctor: { select: { id: true } },
+          clinicAdminProfile: { select: { id: true } },
+        },
+      })
+      if (!linked) return
+
+      const isProvider =
+        !!linked.doctor ||
+        !!linked.clinicAdminProfile ||
+        linked.role === 'DOCTOR' ||
+        linked.role === 'CLINIC_ADMIN'
+
+      if (isProvider) {
+        await tx.refreshToken.updateMany({
+          where: { userId, revoked: false },
+          data: { revoked: true, revokedAt: now },
+        })
+        return
+      }
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: now,
+          status: 'INACTIVE',
+          email: `deleted+${userId}.${now.getTime()}@deleted.local`,
+          cpfHash: null,
+        },
+      })
+      await tx.refreshToken.updateMany({
+        where: { userId, revoked: false },
+        data: { revoked: true, revokedAt: now },
+      })
+    })
+  },
+
+  async revokeFamilyCaregiverLinks(familyId: string) {
+    const now = new Date()
+    await db.$transaction([
+      db.caregiverInvite.updateMany({
+        where: { familyId, status: { not: 'REVOKED' } },
+        data: { status: 'REVOKED', revokedAt: now },
+      }),
+      db.caregiverAccess.updateMany({
+        where: { familyId, status: { not: 'REVOKED' } },
+        data: { status: 'REVOKED', revokedAt: now },
+      }),
+    ])
+  },
+
+  async revokeCaregiverAccessesByUser(caregiverId: string) {
+    const now = new Date()
+    await db.caregiverAccess.updateMany({
+      where: { caregiverId, status: { not: 'REVOKED' } },
+      data: { status: 'REVOKED', revokedAt: now },
+    })
+  },
 }

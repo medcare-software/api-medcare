@@ -65,6 +65,13 @@ export const medicalAccessRepository = {
     return db.medicalAccessGrant.delete({ where: { id } })
   },
 
+  // Hard-delete em massa — usado na exclusão de conta (soft-delete de FamilyMember
+  // não dispara onDelete Cascade do Prisma).
+  deleteManyByMemberIds(memberIds: string[]) {
+    if (memberIds.length === 0) return Promise.resolve({ count: 0 })
+    return db.medicalAccessGrant.deleteMany({ where: { memberId: { in: memberIds } } })
+  },
+
   // `status` opcional: sem ele, a clínica/médico também precisa ver grants
   // expirados/revogados na própria listagem (coluna "Status" e KPIs da tela de
   // acessos). O consumidor "meus pacientes" do médico passa status=ACTIVE.
