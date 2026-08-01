@@ -41,4 +41,5 @@ USER medcare
 
 EXPOSE 3000
 
-CMD ["node", "dist/server.js"]
+# migrate deploy no boot — schema precisa acompanhar o código em cada deploy
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
