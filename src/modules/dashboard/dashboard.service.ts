@@ -1,3 +1,4 @@
+import { reportsRepository } from '../reports/reports.repository.js'
 import { storeAnalyticsService } from '../store-analytics/store-analytics.service.js'
 import { dashboardRepository } from './dashboard.repository.js'
 import type { DashboardQuery } from './dashboard.schema.js'
@@ -34,6 +35,8 @@ export const dashboardService = {
       topState,
       previousMonthRevenue,
       monthlyDownloads,
+      monthlyDownloadsByPlatform,
+      stateBreakdown,
     ] = await Promise.all([
       dashboardRepository.countClinicsByStatus(),
       dashboardRepository.countDoctorsByStatus(),
@@ -50,6 +53,8 @@ export const dashboardService = {
       dashboardRepository.topClinicState(),
       dashboardRepository.sumSubscriptionRevenueAt(['ACTIVE'], monthStart),
       dashboardRepository.monthlyDownloadSeries(query.months),
+      storeAnalyticsService.getMonthlyDownloadsByPlatform(query.months),
+      reportsRepository.countUsersByState(),
     ])
 
     const activeClinics = countByStatus(clinicsByStatus, 'ACTIVE')
@@ -93,6 +98,7 @@ export const dashboardService = {
         month: row.month.toISOString().slice(0, 7),
         count: Number(row.count),
       })),
+      monthlyDownloadsByPlatform,
       clientTypeBreakdown: [
         { id: 'clinics', label: 'Clínicas', count: activeClinics },
         { id: 'doctors', label: 'Médicos', count: activeDoctors },
@@ -100,6 +106,11 @@ export const dashboardService = {
       ],
       platformBreakdown: platformBreakdown.map((row) => ({
         platform: row.platform,
+        count: row._count._all,
+      })),
+      // Proxy geográfico: cadastros por UF (lojas não expõem downloads por estado BR).
+      stateDistribution: stateBreakdown.map((row) => ({
+        state: row.state ?? 'Não informado',
         count: row._count._all,
       })),
       storeDownloads,

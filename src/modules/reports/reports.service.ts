@@ -540,6 +540,9 @@ export const reportsService = {
   async getGrowth(state?: string) {
     const thresholdDate = new Date()
     thresholdDate.setDate(thresholdDate.getDate() - 30)
+    const monthStart = new Date()
+    monthStart.setDate(1)
+    monthStart.setHours(0, 0, 0, 0)
 
     const [
       monthlySignups,
@@ -550,6 +553,9 @@ export const reportsService = {
       usersAtRisk,
       avgMedicationsPerUser,
       topMunicipalitiesRows,
+      allTimeDownloads,
+      downloadsThisMonth,
+      monthlyDownloads,
     ] = await Promise.all([
       dashboardRepository.monthlySignupSeries(12),
       dashboardRepository.countByPlatform(),
@@ -559,6 +565,9 @@ export const reportsService = {
       reportsRepository.countAppUsersAtRisk(thresholdDate),
       reportsRepository.averageMedicationsPerUser(),
       reportsRepository.countUsersByCity(state, state ? 30 : 5),
+      storeAnalyticsService.getAllTimeTotals(),
+      storeAnalyticsService.getDownloadsInRange(monthStart, new Date()),
+      storeAnalyticsService.getMonthlyDownloadsByPlatform(12),
     ])
 
     let cumulative = 0
@@ -574,26 +583,24 @@ export const reportsService = {
     const totalSignups = cumulative
     const newSignupsThisMonth = series.length > 0 ? (series.at(-1)?.newSignups ?? 0) : 0
     const totalAppUsers = roleBreakdown.reduce((sum, row) => sum + row._count._all, 0)
-    const totalDownloadsFromStores = storeDownloads.totalsByPlatform.reduce(
-      (sum, row) => sum + row.totalDownloads,
-      0,
-    )
-    // Sem downloads de loja configurados, usamos o total de cadastros como
-    // aproximação (mesmo padrão de fallback já usado no card de downloads por loja).
-    const totalDownloads =
+    const storesConfigured =
       storeDownloads.configured.ios || storeDownloads.configured.android
-        ? totalDownloadsFromStores
-        : totalSignups
+    // Sem lojas configuradas, cai para cadastros como aproximação legada.
+    const totalDownloads = storesConfigured ? allTimeDownloads.total : totalSignups
+    const downloadsThisMonthValue = storesConfigured ? downloadsThisMonth : newSignupsThisMonth
     const retentionRate = totalAppUsers > 0 ? 1 - usersAtRisk / totalAppUsers : 0
 
     return {
       kpis: {
         totalDownloads,
+        downloadsThisMonth: downloadsThisMonthValue,
         newSignupsThisMonth,
         retentionRate: Math.round(retentionRate * 1000) / 1000,
         avgMedicationsPerUser: Math.round(avgMedicationsPerUser * 10) / 10,
       },
       series,
+      monthlyDownloads,
+      downloadsByPlatform: allTimeDownloads.byPlatform,
       stateDistribution: stateBreakdown.map((row) => ({
         state: row.state ?? 'Não informado',
         count: row._count._all,
