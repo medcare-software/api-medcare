@@ -32,4 +32,34 @@ export const storeAnalyticsRepository = {
       _sum: { downloadCount: true },
     })
   },
+
+  sumAll() {
+    return db.storeDownloadSnapshot.aggregate({
+      _sum: { downloadCount: true },
+    })
+  },
+
+  sumAllByPlatform() {
+    return db.storeDownloadSnapshot.groupBy({
+      by: ['platform'],
+      _sum: { downloadCount: true },
+    })
+  },
+
+  sumInRange(startDate: Date, endDate: Date) {
+    return db.storeDownloadSnapshot.aggregate({
+      where: { date: { gte: startDate, lte: endDate } },
+      _sum: { downloadCount: true },
+    })
+  },
+
+  monthlySeriesByPlatform(months: number) {
+    return db.$queryRaw<{ month: Date; platform: string; count: bigint }[]>`
+      SELECT date_trunc('month', date) AS month, platform, sum("downloadCount")::bigint AS count
+      FROM store_download_snapshots
+      WHERE date >= date_trunc('month', now()) - make_interval(months => (${months}::int - 1))
+      GROUP BY 1, 2
+      ORDER BY 1, 2
+    `
+  },
 }

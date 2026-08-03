@@ -186,45 +186,64 @@ async function fetchGooglePlayDownloads(date: Date): Promise<number | null> {
   return Math.round(value)
 }
 
+function utcDay(date: Date): Date {
+  const day = new Date(date)
+  day.setUTCHours(0, 0, 0, 0)
+  return day
+}
+
+async function syncDay(date: Date): Promise<void> {
+  const day = utcDay(date)
+
+  const results = await Promise.allSettled([
+    fetchAppStoreDownloads(day),
+    fetchGooglePlayDownloads(day),
+  ])
+
+  const [iosResult, androidResult] = results
+  if (iosResult.status === 'fulfilled' && iosResult.value !== null) {
+    await storeAnalyticsRepository.upsertSnapshot({
+      platform: 'ios',
+      date: day,
+      downloadCount: iosResult.value,
+      source: 'app_store_connect',
+    })
+  } else if (iosResult.status === 'rejected') {
+    console.error('[store-analytics] Falha ao sincronizar downloads iOS', iosResult.reason)
+  }
+
+  if (androidResult.status === 'fulfilled' && androidResult.value !== null) {
+    await storeAnalyticsRepository.upsertSnapshot({
+      platform: 'android',
+      date: day,
+      downloadCount: androidResult.value,
+      source: 'google_play',
+    })
+  } else if (androidResult.status === 'rejected') {
+    console.error(
+      '[store-analytics] Falha ao sincronizar downloads Android',
+      androidResult.reason,
+    )
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export const storeAnalyticsService = {
-  // Roda uma vez por dia (ver server.ts) — sincroniza o download do dia
-  // anterior (relatórios das lojas normalmente só ficam prontos no dia
-  // seguinte). Cada plataforma falha isoladamente: erro em uma não impede a
-  // outra de ser gravada.
-  async syncDownloads(): Promise<void> {
-    const yesterday = new Date()
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1)
-    yesterday.setUTCHours(0, 0, 0, 0)
+  // Sincroniza downloads das lojas. Por padrão (`daysBack: 1`) só o dia
+  // anterior — relatórios normalmente só ficam prontos em D+1. Use `daysBack`
+  // maior para backfill histórico. Cada plataforma falha isoladamente.
+  async syncDownloads(options: { daysBack?: number; throttleMs?: number } = {}): Promise<void> {
+    const daysBack = Math.max(1, options.daysBack ?? 1)
+    const throttleMs = options.throttleMs ?? 0
 
-    const results = await Promise.allSettled([
-      fetchAppStoreDownloads(yesterday),
-      fetchGooglePlayDownloads(yesterday),
-    ])
-
-    const [iosResult, androidResult] = results
-    if (iosResult.status === 'fulfilled' && iosResult.value !== null) {
-      await storeAnalyticsRepository.upsertSnapshot({
-        platform: 'ios',
-        date: yesterday,
-        downloadCount: iosResult.value,
-        source: 'app_store_connect',
-      })
-    } else if (iosResult.status === 'rejected') {
-      console.error('[store-analytics] Falha ao sincronizar downloads iOS', iosResult.reason)
-    }
-
-    if (androidResult.status === 'fulfilled' && androidResult.value !== null) {
-      await storeAnalyticsRepository.upsertSnapshot({
-        platform: 'android',
-        date: yesterday,
-        downloadCount: androidResult.value,
-        source: 'google_play',
-      })
-    } else if (androidResult.status === 'rejected') {
-      console.error(
-        '[store-analytics] Falha ao sincronizar downloads Android',
-        androidResult.reason,
-      )
+    for (let offset = daysBack; offset >= 1; offset -= 1) {
+      const day = new Date()
+      day.setUTCDate(day.getUTCDate() - offset)
+      await syncDay(day)
+      if (throttleMs > 0 && offset > 1) await sleep(throttleMs)
     }
   },
 
@@ -252,5 +271,58 @@ export const storeAnalyticsService = {
         downloadCount: snapshot.downloadCount,
       })),
     }
+  },
+
+  isConfigured() {
+    return { ios: isAppStoreConnectConfigured(), android: isGooglePlayConfigured() }
+  },
+
+  async getAllTimeTotals() {
+    const [allTime, byPlatform] = await Promise.all([
+      storeAnalyticsRepository.sumAll(),
+      storeAnalyticsRepository.sumAllByPlatform(),
+    ])
+    return {
+      total: allTime._sum.downloadCount ?? 0,
+      byPlatform: byPlatform.map((row) => ({
+        platform: row.platform,
+        totalDownloads: row._sum.downloadCount ?? 0,
+      })),
+    }
+  },
+
+  async getDownloadsInRange(startDate: Date, endDate: Date) {
+    const agg = await storeAnalyticsRepository.sumInRange(startDate, endDate)
+    return agg._sum.downloadCount ?? 0
+  },
+
+  async getMonthlyDownloadsByPlatform(months: number) {
+    const rows = await storeAnalyticsRepository.monthlySeriesByPlatform(months)
+    const byMonth = new Map<string, { month: string; ios: number; android: number; total: number }>()
+
+    for (const row of rows) {
+      const month = row.month.toISOString().slice(0, 7)
+      const entry = byMonth.get(month) ?? { month, ios: 0, android: 0, total: 0 }
+      const count = Number(row.count)
+      if (row.platform === 'ios') entry.ios += count
+      else if (row.platform === 'android') entry.android += count
+      entry.total = entry.ios + entry.android
+      byMonth.set(month, entry)
+    }
+
+    // Preenche meses sem snapshot para o chart não “pular” buracos.
+    const result: { month: string; ios: number; android: number; total: number }[] = []
+    const cursor = new Date()
+    cursor.setUTCDate(1)
+    cursor.setUTCHours(0, 0, 0, 0)
+    cursor.setUTCMonth(cursor.getUTCMonth() - (months - 1))
+
+    for (let i = 0; i < months; i += 1) {
+      const month = cursor.toISOString().slice(0, 7)
+      result.push(byMonth.get(month) ?? { month, ios: 0, android: 0, total: 0 })
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+    }
+
+    return result
   },
 }
