@@ -43,7 +43,12 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       body: payload.body,
       data: payload.data ?? {},
     }))
-  if (messages.length === 0) return
+  if (messages.length === 0) {
+    console.warn(
+      `[push] userId=${userId} sem Expo push token registrado — inbox gravado, device não notificado.`,
+    )
+    return
+  }
 
   const chunks = expo.chunkPushNotifications(messages)
   for (const chunk of chunks) {
