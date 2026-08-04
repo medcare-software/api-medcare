@@ -1,6 +1,5 @@
 import type { ExamType, GmailImportedExam, GmailIntegration, LabEmail } from '@prisma/client'
 
-import { db } from '../../config/database.js'
 import { env } from '../../config/env.js'
 import { assertOwnScopedMemberInScope } from '../../shared/access/index.js'
 import { extractExamFromEmail } from '../../shared/ai/gmail-exam.client.js'
@@ -22,30 +21,62 @@ import { filesRepository } from '../files/files.repository.js'
 import { gmailImportRepository } from './gmail-import.repository.js'
 
 // Formato salvo em GmailImportedExam.extractedSummary — mistura a saída bruta
-// da IA (ver GmailExamExtraction) com o subject do e-mail, guardado à parte
-// porque a mensagem original não fica persistida em lugar nenhum além disso.
+// da IA (ver GmailExamExtraction) com o subject do e-mail e labName do allow-list.
 type StoredExtractedSummary = {
   isLabResult: boolean
   patientNameGuess?: string
   examType?: ExamType
+  examTitle?: string
   examDateGuess?: string
   resultsSummary?: string
   subject?: string
+  labName?: string
   skipReason?: string
 }
 
-function resolvePendingName(summary: StoredExtractedSummary): string {
-  return summary.resultsSummary?.slice(0, 120) || summary.subject || 'Exame importado do Gmail'
+const EXAM_TYPE_LABELS: Record<ExamType, string> = {
+  LABORATORIAL: 'Exame laboratorial',
+  IMAGEM: 'Exame de imagem',
+  OUTROS: 'Exame',
+}
+
+function resolveExamTitle(summary: StoredExtractedSummary): string {
+  const fromAi = summary.examTitle?.trim()
+  if (fromAi) return fromAi.slice(0, 80)
+  if (summary.examType) return EXAM_TYPE_LABELS[summary.examType] ?? 'Exame'
+  const subject = summary.subject?.trim()
+  if (subject) return subject.slice(0, 80)
+  return 'Exame'
+}
+
+/** Título do card: "{LabEmail.name} - Hemograma…". Nunca usa resultsSummary. */
+function resolveExamDisplayName(summary: StoredExtractedSummary): string {
+  const examTitle = resolveExamTitle(summary)
+  const labName = summary.labName?.trim()
+  if (labName) return `${labName} - ${examTitle}`
+  return examTitle
+}
+
+function resolvePendingMessage(summary: StoredExtractedSummary): string {
+  const examTitle = resolveExamTitle(summary)
+  const labName = summary.labName?.trim()
+  if (labName) return `${labName} enviou o exame ${examTitle}`
+  return `Novo exame recebido: ${examTitle}`
 }
 
 function toPendingResponse(item: GmailImportedExam, ownerMemberId: string | null) {
   const summary = (item.extractedSummary ?? {}) as StoredExtractedSummary
+  const examTitle = resolveExamTitle(summary)
+  const labName = summary.labName?.trim() || null
   return {
     id: item.id,
     fileId: item.fileId,
     ownerMemberId,
     suggestedMemberId: item.suggestedMemberId,
-    name: resolvePendingName(summary),
+    name: resolveExamDisplayName(summary),
+    examTitle,
+    labName,
+    message: resolvePendingMessage(summary),
     examType: summary.examType ?? 'OUTROS',
     examDate: summary.examDateGuess ?? item.createdAt.toISOString(),
     createdAt: item.createdAt,
@@ -68,13 +99,11 @@ function normalizeName(value: string): string {
     .trim()
 }
 
-function labEmailSet(labs: LabEmail[]): Set<string> {
-  return new Set(labs.map((l) => l.email.trim().toLowerCase()))
+function labEmailByAddress(labs: LabEmail[]): Map<string, LabEmail> {
+  return new Map(labs.map((l) => [l.email.trim().toLowerCase(), l]))
 }
 
-// Só considera "confiante" quando exatamente 1 membro da família bate com o
-// nome extraído pela IA — ambiguidade vira PENDING (revisão manual), nunca um
-// palpite que possa anexar o exame ao membro errado.
+// Match de nome só para pré-selecionar no BottomSheet — nunca cria Exam sozinho.
 function findConfidentMemberMatch(
   members: { id: string; displayName: string }[],
   guess: string | undefined,
@@ -120,11 +149,12 @@ async function processMessage(
   integration: GmailIntegration,
   accessToken: string,
   messageId: string,
-  allowedSenders: Set<string>,
+  labsByEmail: Map<string, LabEmail>,
 ): Promise<Date | null> {
   const meta = await getMessageMetadata(accessToken, messageId)
   const fromAddress = extractEmailAddress(meta.from)
-  if (!allowedSenders.has(fromAddress)) {
+  const lab = labsByEmail.get(fromAddress)
+  if (!lab) {
     return null
   }
 
@@ -172,6 +202,7 @@ async function processMessage(
       extractedSummary: {
         isLabResult: false,
         subject: message.subject,
+        labName: lab.name,
         skipReason: 'ai_unavailable_or_null',
       },
       status: 'IGNORED',
@@ -183,7 +214,11 @@ async function processMessage(
     await gmailImportRepository.createImportedExam({
       gmailIntegrationId: integration.id,
       gmailMessageId: messageId,
-      extractedSummary: { ...extraction, subject: message.subject },
+      extractedSummary: {
+        isLabResult: false,
+        subject: message.subject,
+        labName: lab.name,
+      },
       status: 'IGNORED',
     })
     return internalDate
@@ -201,59 +236,33 @@ async function processMessage(
   }
 
   const familyMembers = await gmailImportRepository.findFamilyMembersByUserId(integration.userId)
-  const matchedMemberId = findConfidentMemberMatch(familyMembers, extraction.patientNameGuess)
+  const suggestedMemberId = findConfidentMemberMatch(familyMembers, extraction.patientNameGuess)
 
-  const owner = await db.user.findUnique({
-    where: { id: integration.userId },
-    select: { role: true },
-  })
-  const ownMember =
-    owner?.role === 'FAMILY_MEMBER'
-      ? await gmailImportRepository.findOwnFamilyMember(integration.userId)
-      : null
-  // FAMILY_MEMBER só auto-linka no próprio prontuário — match de outro membro fica PENDING.
-  const canAutoLink =
-    matchedMemberId && (owner?.role !== 'FAMILY_MEMBER' || matchedMemberId === ownMember?.id)
-
-  if (canAutoLink && matchedMemberId) {
-    const exam = await gmailImportRepository.createExam({
-      memberId: matchedMemberId,
-      name:
-        extraction.resultsSummary?.slice(0, 120) || message.subject || 'Exame importado do Gmail',
-      examType: extraction.examType ?? 'OUTROS',
-      examDate: extraction.examDateGuess ? new Date(extraction.examDateGuess) : internalDate,
-      ...(fileId && { fileId }),
-    })
-
-    await gmailImportRepository.createImportedExam({
-      gmailIntegrationId: integration.id,
-      gmailMessageId: messageId,
-      suggestedMemberId: matchedMemberId,
-      ...(fileId && { fileId }),
-      extractedSummary: { ...extraction, subject: message.subject },
-      status: 'AUTO_LINKED',
-      resolvedExamId: exam.id,
-    })
-    await gmailImportRepository.incrementImportedCount(integration.userId)
-    await sendPushToUser(integration.userId, {
-      title: 'Novo laudo importado do Gmail',
-      body: `"${exam.name}" foi importado automaticamente.`,
-      data: { type: 'exam-shared', examId: exam.id, memberId: matchedMemberId },
-    })
-  } else {
-    const pending = await gmailImportRepository.createImportedExam({
-      gmailIntegrationId: integration.id,
-      gmailMessageId: messageId,
-      ...(fileId && { fileId }),
-      extractedSummary: { ...extraction, subject: message.subject },
-      status: 'PENDING',
-    })
-    await sendPushToUser(integration.userId, {
-      title: 'Laudo aguardando revisão',
-      body: 'Recebemos um laudo por e-mail, mas precisamos que você confirme de quem é.',
-      data: { type: 'gmail-exam-needs-review', gmailImportedExamId: pending.id },
-    })
+  const storedSummary: StoredExtractedSummary = {
+    isLabResult: extraction.isLabResult,
+    subject: message.subject,
+    labName: lab.name,
+    ...(extraction.patientNameGuess && { patientNameGuess: extraction.patientNameGuess }),
+    ...(extraction.examType && { examType: extraction.examType }),
+    ...(extraction.examTitle && { examTitle: extraction.examTitle }),
+    ...(extraction.examDateGuess && { examDateGuess: extraction.examDateGuess }),
+    ...(extraction.resultsSummary && { resultsSummary: extraction.resultsSummary }),
   }
+
+  const pending = await gmailImportRepository.createImportedExam({
+    gmailIntegrationId: integration.id,
+    gmailMessageId: messageId,
+    ...(suggestedMemberId && { suggestedMemberId }),
+    ...(fileId && { fileId }),
+    extractedSummary: storedSummary,
+    status: 'PENDING',
+  })
+
+  await sendPushToUser(integration.userId, {
+    title: 'Novo laudo recebido',
+    body: resolvePendingMessage(storedSummary),
+    data: { type: 'gmail-exam-needs-review', gmailImportedExamId: pending.id },
+  })
 
   return internalDate
 }
@@ -264,7 +273,7 @@ async function processMessageIds(
   messageIds: string[],
   activeLabEmails: LabEmail[],
 ): Promise<Date> {
-  const allowedSenders = labEmailSet(activeLabEmails)
+  const labsByEmail = labEmailByAddress(activeLabEmails)
   const alreadyImported = await gmailImportRepository.findExistingMessageIds(
     integration.id,
     messageIds,
@@ -278,7 +287,7 @@ async function processMessageIds(
 
   for (const messageId of newMessageIds) {
     try {
-      const processedAt = await processMessage(integration, accessToken, messageId, allowedSenders)
+      const processedAt = await processMessage(integration, accessToken, messageId, labsByEmail)
       if (processedAt && processedAt > latestProcessedAt) latestProcessedAt = processedAt
     } catch (err) {
       console.error(
@@ -504,7 +513,7 @@ export const gmailImportService = {
     const summary = (item.extractedSummary ?? {}) as StoredExtractedSummary
     const exam = await gmailImportRepository.createExam({
       memberId,
-      name: resolvePendingName(summary),
+      name: resolveExamDisplayName(summary),
       examType: summary.examType ?? 'OUTROS',
       examDate: summary.examDateGuess ? new Date(summary.examDateGuess) : item.createdAt,
       ...(item.fileId && { fileId: item.fileId }),

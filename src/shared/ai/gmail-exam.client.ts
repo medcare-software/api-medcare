@@ -19,6 +19,7 @@ export type GmailExamExtraction = {
   isLabResult: boolean
   patientNameGuess?: string | undefined
   examType?: (typeof EXAM_TYPES)[number] | undefined
+  examTitle?: string | undefined
   examDateGuess?: string | undefined
   resultsSummary?: string | undefined
 }
@@ -27,6 +28,7 @@ const ExtractionSchema = z.object({
   isLabResult: z.boolean(),
   patientNameGuess: z.string().min(1).optional(),
   examType: z.enum(EXAM_TYPES).optional(),
+  examTitle: z.string().min(1).max(80).optional(),
   examDateGuess: z.string().min(1).optional(),
   resultsSummary: z.string().min(1).optional(),
 })
@@ -52,6 +54,11 @@ const EXTRACT_TOOL: Anthropic.Tool = {
         enum: [...EXAM_TYPES],
         description: 'Tipo do exame.',
       },
+      examTitle: {
+        type: 'string',
+        description:
+          'Nome curto do exame para título de card (máx. ~60 caracteres), em português — ex.: "Hemograma completo e bioquímica". NUNCA um parágrafo de resumo.',
+      },
       examDateGuess: {
         type: 'string',
         description: 'Data do exame no formato AAAA-MM-DD, se identificável.',
@@ -69,11 +76,13 @@ const SYSTEM_PROMPT = `Você é um assistente que analisa e-mails de laboratóri
 
 Regras:
 - Se o e-mail não for claramente um laudo/resultado (ex.: lembrete de consulta, confirmação de agendamento, marketing, cobrança), reporte isLabResult=false e não preencha os demais campos.
-- Só preencha patientNameGuess/examDateGuess/examType/resultsSummary se identificar com confiança razoável — não invente.
+- Só preencha patientNameGuess/examDateGuess/examType/examTitle/resultsSummary se identificar com confiança razoável — não invente.
+- examTitle: nome curto do exame (ex. "Hemograma completo e bioquímica", "Ressonância de joelho"). Nunca um resumo dos resultados nem texto longo.
 - resultsSummary deve ser um resumo curto, em português, para leigos (não profissionais de saúde), sem repetir números clínicos sensíveis desnecessariamente.
 - Isso é um apoio informativo, não substitui avaliação médica — não inclua esse aviso no resultsSummary (a interface já mostra isso separadamente).
 
 Responda SEMPRE chamando a ferramenta extract_exam_from_email, nunca em texto livre.`
+
 
 // Retorna null (nunca lança) quando a IA está indisponível/falha — quem chama
 // (gmail-import.service.ts) deve tratar isso como "não processar agora", nunca
