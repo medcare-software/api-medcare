@@ -27,7 +27,11 @@ function isAppStoreConnectConfigured(): boolean {
 }
 
 function isGooglePlayConfigured(): boolean {
-  return Boolean(env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON && env.GOOGLE_PLAY_PACKAGE_NAME)
+  return Boolean(
+    env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON &&
+      env.GOOGLE_PLAY_PACKAGE_NAME &&
+      env.GOOGLE_PLAY_STORAGE_BUCKET,
+  )
 }
 
 // JWT de curta duração (máx. 20 min) exigido pela App Store Connect API,
@@ -118,72 +122,130 @@ async function fetchAppStoreDownloads(date: Date): Promise<number | null> {
   return totalUnits
 }
 
-// Busca downloads do Google Play via Play Developer Reporting API para uma
-// data — mesmas ressalvas do fetchAppStoreDownloads: `null` quando não
-// configurado, nunca lança nesse caso.
-//
-// NÃO TESTADO CONTRA A API REAL — a Play Developer Reporting API
-// (playdeveloperreporting.googleapis.com) é relativamente nova; a métrica
-// exata usada aqui ("installers"/dimensão "DAILY") deve ser confirmada contra
-// https://developers.google.com/play/developer/reporting assim que houver uma
-// service account real habilitada no Play Console.
+// Downloads Android vêm dos CSVs mensais no bucket GCS da Play Console
+// (não da Play Developer Reporting API — que cobre vitals/crashes, sem installs).
+// Docs: https://support.google.com/googleplay/android-developer/answer/6135870
+// Path: gs://{bucket}/stats/installs/installs_{package}_{yyyyMM}_overview.csv
+// Encoding: UTF-16. Defasagem típica de 3–7 dias.
+
+const playInstallsMonthCache = new Map<string, Map<string, number>>()
+
+function decodePlayCsv(buffer: Buffer): string {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return buffer.subarray(2).toString('utf16le')
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    const swapped = Buffer.from(buffer.subarray(2))
+    for (let i = 0; i + 1 < swapped.length; i += 2) {
+      const a = swapped[i]!
+      swapped[i] = swapped[i + 1]!
+      swapped[i + 1] = a
+    }
+    return swapped.toString('utf16le')
+  }
+  // Fallback: alguns ambientes já entregam UTF-8
+  return buffer.toString('utf8')
+}
+
+function parsePlayInstallsCsv(tsvOrCsv: string): Map<string, number> {
+  const lines = tsvOrCsv.split(/\r?\n/).filter((line) => line.trim().length > 0)
+  const headerLine = lines[0]
+  if (!headerLine) return new Map()
+
+  const delimiter = headerLine.includes('\t') ? '\t' : ','
+  const headers = headerLine.split(delimiter).map((h) => h.trim().replace(/^"|"$/g, ''))
+  const dateIndex = headers.findIndex((h) => /^date$/i.test(h))
+  const installsIndex = headers.findIndex(
+    (h) =>
+      /^daily user installs$/i.test(h) ||
+      /^daily device installs$/i.test(h) ||
+      /^user installs$/i.test(h),
+  )
+  if (dateIndex === -1 || installsIndex === -1) {
+    console.warn(
+      '[store-analytics] CSV de installs do Play sem colunas Date / Daily User Installs',
+      { headers },
+    )
+    return new Map()
+  }
+
+  const byDate = new Map<string, number>()
+  for (const line of lines.slice(1)) {
+    const cols = line.split(delimiter).map((c) => c.trim().replace(/^"|"$/g, ''))
+    const date = cols[dateIndex]
+    const raw = cols[installsIndex]
+    if (!date || raw === undefined) continue
+    byDate.set(date, Number(raw) || 0)
+  }
+  return byDate
+}
+
+async function loadPlayInstallsMonth(yearMonth: string): Promise<Map<string, number>> {
+  const cached = playInstallsMonthCache.get(yearMonth)
+  if (cached) return cached
+
+  const credentials = JSON.parse(env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? '{}') as {
+    client_email?: string
+    private_key?: string
+    project_id?: string
+  }
+  const auth = new GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/devstorage.read_only'],
+  })
+  const client = await auth.getClient()
+  const accessTokenResponse = await client.getAccessToken()
+  const accessToken = accessTokenResponse.token
+  if (!accessToken) {
+    console.warn('[store-analytics] Falha ao obter access token do GCS Play — pulando Android')
+    return new Map()
+  }
+
+  const bucket = (env.GOOGLE_PLAY_STORAGE_BUCKET ?? '').replace(/^gs:\/\//, '').replace(/\/$/, '')
+  const packageName = env.GOOGLE_PLAY_PACKAGE_NAME ?? ''
+  const objectPath = `stats/installs/installs_${packageName}_${yearMonth}_overview.csv`
+  const url = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(objectPath)}?alt=media`
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+
+  if (response.status === 404) {
+    console.warn(
+      `[store-analytics] Relatório Play não encontrado para ${yearMonth} (${objectPath}) — arquivo ainda não publicado ou bucket/package incorretos`,
+    )
+    const empty = new Map<string, number>()
+    playInstallsMonthCache.set(yearMonth, empty)
+    return empty
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(
+      `GCS Play respondeu ${response.status} ao buscar ${objectPath}${body ? `: ${body.slice(0, 200)}` : ''}`,
+    )
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer())
+  const byDate = parsePlayInstallsCsv(decodePlayCsv(buffer))
+  playInstallsMonthCache.set(yearMonth, byDate)
+  return byDate
+}
+
 async function fetchGooglePlayDownloads(date: Date): Promise<number | null> {
   if (!isGooglePlayConfigured()) {
     console.warn('[store-analytics] Google Play não configurado — pulando Android')
     return null
   }
 
-  const auth = new GoogleAuth({
-    credentials: JSON.parse(env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? '{}'),
-    scopes: ['https://www.googleapis.com/auth/playdeveloperreporting'],
-  })
-  const client = await auth.getClient()
-  const accessTokenResponse = await client.getAccessToken()
-  const accessToken = accessTokenResponse.token
-  if (!accessToken) {
-    console.warn('[store-analytics] Falha ao obter access token do Google Play — pulando Android')
-    return null
-  }
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const yearMonth = `${year}${month}`
+  const dateKey = date.toISOString().slice(0, 10)
 
-  const packageName = env.GOOGLE_PLAY_PACKAGE_NAME
-  const dateFields = {
-    year: date.getUTCFullYear(),
-    month: date.getUTCMonth() + 1,
-    day: date.getUTCDate(),
-  }
-  const url = `https://playdeveloperreporting.googleapis.com/v1beta1/apps/${packageName}/appDownloadReport:query`
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      timelineSpec: { aggregationPeriod: 'DAILY', startTime: dateFields, endTime: dateFields },
-      metrics: ['installers'],
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Play Developer Reporting API respondeu ${response.status} ao buscar downloads`)
-  }
-
-  const body = (await response.json()) as {
-    rows?: {
-      metrics?: {
-        metric: string
-        value?: { doubleValue?: number; decimalValue?: { value?: string } }
-      }[]
-    }[]
-  }
-  const row = body.rows?.[0]
-  const metric = row?.metrics?.find((item) => item.metric === 'installers')
-  if (!metric) {
-    console.warn(
-      '[store-analytics] Formato inesperado da resposta do Google Play — métrica não encontrada',
-    )
-    return null
-  }
-  const value = metric.value?.doubleValue ?? Number(metric.value?.decimalValue?.value ?? 0)
-  return Math.round(value)
+  const byDate = await loadPlayInstallsMonth(yearMonth)
+  // Dia ainda não publicado no CSV mensal (lag 3–7 dias) → 0, não erro.
+  return byDate.get(dateKey) ?? 0
 }
 
 function utcDay(date: Date): Date {

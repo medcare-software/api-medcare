@@ -9,6 +9,8 @@ interface UpsertFromOAuthData {
   refreshTokenEncrypted: Buffer<ArrayBuffer>
   tokenExpiresAt: Date
   scope: string
+  historyId?: string | null
+  watchExpiration?: Date | null
 }
 
 export const gmailIntegrationRepository = {
@@ -28,6 +30,8 @@ export const gmailIntegrationRepository = {
         refreshTokenEncrypted: data.refreshTokenEncrypted,
         tokenExpiresAt: data.tokenExpiresAt,
         scope: data.scope,
+        historyId: data.historyId ?? null,
+        watchExpiration: data.watchExpiration ?? null,
       },
       update: {
         googleEmail: data.googleEmail,
@@ -39,11 +43,17 @@ export const gmailIntegrationRepository = {
         connectedAt: new Date(),
         lastVerifiedAt: new Date(),
         disconnectedAt: null,
+        historyId: data.historyId ?? null,
+        watchExpiration: data.watchExpiration ?? null,
       },
     })
   },
 
   updateSettings(userId: string, data: { autoImportEnabled: boolean }) {
+    return db.gmailIntegration.update({ where: { userId }, data })
+  },
+
+  updateWatch(userId: string, data: { historyId: string; watchExpiration: Date }) {
     return db.gmailIntegration.update({ where: { userId }, data })
   },
 
@@ -56,6 +66,8 @@ export const gmailIntegrationRepository = {
         accessTokenEncrypted: null,
         refreshTokenEncrypted: null,
         tokenExpiresAt: null,
+        historyId: null,
+        watchExpiration: null,
       },
     })
   },

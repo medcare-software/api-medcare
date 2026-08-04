@@ -191,11 +191,16 @@ export async function refreshAccessToken(
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me'
 
-async function gmailFetch(accessToken: string, path: string): Promise<unknown> {
+async function gmailFetch(accessToken: string, path: string, init?: RequestInit): Promise<unknown> {
   let response: Response
   try {
     response = await fetch(`${GMAIL_API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
     })
   } catch (err) {
     console.error(
@@ -213,10 +218,15 @@ async function gmailFetch(accessToken: string, path: string): Promise<unknown> {
     throw new AppError({
       code: 'GMAIL_API_ERROR',
       message: 'Não foi possível acessar o Gmail agora.',
+      statusCode: response.status,
     })
   }
 
-  return response.json()
+  // users.stop responde 204 sem body
+  if (response.status === 204) return null
+  const text = await response.text()
+  if (!text) return null
+  return JSON.parse(text) as unknown
 }
 
 // Busca só ids de mensagens — cada resultado é lido individualmente depois via
@@ -338,6 +348,120 @@ export async function getAttachment(
     `/messages/${messageId}/attachments/${attachmentId}`,
   )) as { data: string }
   return Buffer.from(data.data, 'base64url')
+}
+
+export type GmailWatchResult = {
+  historyId: string
+  expiration: Date
+}
+
+export async function watchMailbox(
+  accessToken: string,
+  topicName: string,
+): Promise<GmailWatchResult> {
+  const data = (await gmailFetch(accessToken, '/watch', {
+    method: 'POST',
+    body: JSON.stringify({ topicName, labelIds: ['INBOX'] }),
+  })) as { historyId: string; expiration: string }
+
+  return {
+    historyId: String(data.historyId),
+    expiration: new Date(Number(data.expiration)),
+  }
+}
+
+export async function stopWatch(accessToken: string): Promise<void> {
+  try {
+    await gmailFetch(accessToken, '/stop', { method: 'POST' })
+  } catch (err) {
+    console.error(
+      `[gmail-oauth] Falha ao parar watch (ignorada): ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+}
+
+export async function getProfile(
+  accessToken: string,
+): Promise<{ emailAddress: string; historyId: string }> {
+  const data = (await gmailFetch(accessToken, '/profile')) as {
+    emailAddress: string
+    historyId: string
+  }
+  return { emailAddress: data.emailAddress, historyId: String(data.historyId) }
+}
+
+export type GmailMessageMetadata = {
+  id: string
+  from: string
+  subject: string
+  internalDate: string
+}
+
+export async function getMessageMetadata(
+  accessToken: string,
+  messageId: string,
+): Promise<GmailMessageMetadata> {
+  const params = new URLSearchParams({
+    format: 'metadata',
+    metadataHeaders: 'From',
+  })
+  params.append('metadataHeaders', 'Subject')
+  const data = (await gmailFetch(accessToken, `/messages/${messageId}?${params.toString()}`)) as {
+    id: string
+    internalDate: string
+    payload: { headers: { name: string; value: string }[] }
+  }
+  const headers = data.payload.headers ?? []
+  return {
+    id: data.id,
+    internalDate: data.internalDate,
+    from: findHeader(headers, 'From'),
+    subject: findHeader(headers, 'Subject'),
+  }
+}
+
+/** Extrai o endereço de um header From (`Nome <a@b.com>` ou `a@b.com`). */
+export function extractEmailAddress(fromHeader: string): string {
+  const angle = fromHeader.match(/<([^>]+)>/)
+  const raw = (angle?.[1] ?? fromHeader).trim().toLowerCase()
+  return raw
+}
+
+export async function listHistoryMessageIds(
+  accessToken: string,
+  startHistoryId: string,
+): Promise<{ messageIds: string[]; latestHistoryId: string | null }> {
+  const ids = new Set<string>()
+  let pageToken: string | undefined
+  let latestHistoryId: string | null = null
+  let page = 0
+  const maxPages = 10
+
+  do {
+    const params = new URLSearchParams({
+      startHistoryId,
+      historyTypes: 'messageAdded',
+      maxResults: '100',
+    })
+    if (pageToken) params.set('pageToken', pageToken)
+
+    const data = (await gmailFetch(accessToken, `/history?${params.toString()}`)) as {
+      history?: { messagesAdded?: { message: { id: string } }[]; id?: string }[]
+      nextPageToken?: string
+      historyId?: string
+    }
+
+    for (const entry of data.history ?? []) {
+      for (const added of entry.messagesAdded ?? []) {
+        ids.add(added.message.id)
+      }
+    }
+    if (data.historyId) latestHistoryId = String(data.historyId)
+    pageToken = data.nextPageToken
+    page += 1
+  } while (pageToken && page < maxPages)
+
+  return { messageIds: [...ids], latestHistoryId }
 }
 
 export async function revokeToken(token: string): Promise<void> {

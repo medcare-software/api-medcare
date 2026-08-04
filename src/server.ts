@@ -8,7 +8,7 @@ import cron from 'node-cron'
 import { buildApp } from './app.js'
 import { env } from './config/env.js'
 import { checkExpiringAccessJob } from './shared/jobs/expiring-access.job.js'
-import { gmailImportJob } from './shared/jobs/gmail-import.job.js'
+import { gmailImportJob, gmailRenewWatchesJob } from './shared/jobs/gmail-import.job.js'
 import { storeAnalyticsSyncJob } from './shared/jobs/store-analytics-sync.job.js'
 
 const start = async () => {
@@ -34,14 +34,18 @@ const start = async () => {
       })
     })
 
-    // A cada 1 minuto — cadência de DESENVOLVIMENTO/TESTES (ver gmail-import.job.ts).
-    // ⚠️ Antes de produção, trocar para algo como '*/15 * * * *' (15 min): rodar a
-    // cada 1 min em produção gera carga desnecessária na API do Gmail sem ganho
-    // real, já que a salvaguarda de LGPD é o allow-list de LabEmail, não a
-    // velocidade do polling.
-    cron.schedule('* * * * *', () => {
+    // Gmail: caminho principal = Pub/Sub (POST /webhooks/gmail-push).
+    // Safety-net 1×/dia (03:00) só para integrações sem watch válido.
+    cron.schedule('0 3 * * *', () => {
       void gmailImportJob().catch((err) => {
-        app.log.error(err, '[cron] falha ao importar laudos do Gmail')
+        app.log.error(err, '[cron] falha no safety-net de importação Gmail')
+      })
+    })
+
+    // Renova users.watch (~7 dias de validade) todas as manhãs às 4h.
+    cron.schedule('0 4 * * *', () => {
+      void gmailRenewWatchesJob().catch((err) => {
+        app.log.error(err, '[cron] falha ao renovar watches do Gmail')
       })
     })
   } catch (err) {

@@ -122,6 +122,14 @@ const envSchema = z.object({
   // processar o callback do Google — appmedcare:// já é usado em outros fluxos
   // (ver reset-password), reaproveitado aqui.
   GOOGLE_OAUTH_APP_RETURN_SCHEME: z.string().default('appmedcare://gmail-oauth-callback'),
+  // Pub/Sub topic usado em users.watch (ex.: projects/PROJECT/topics/gmail-push).
+  // Sem isso, connect não registra watch e o safety-net diário cobre a importação.
+  GMAIL_PUBSUB_TOPIC: z.string().optional(),
+  // Audience do JWT OIDC da push subscription (URL completa do webhook).
+  // Ex.: https://api.../api/v1/webhooks/gmail-push
+  GMAIL_PUSH_AUDIENCE: z.string().url().optional(),
+  // Segredo opcional (?token=) para aceitar push sem OIDC em staging/dev.
+  GMAIL_PUSH_SECRET: z.string().optional(),
 
   // ── Integração App Store Connect (relatório de downloads — Fase 7.2) ────────
   // Opcionais de propósito, como SMTP/Anthropic/Gmail: sem credenciais em dev/
@@ -145,10 +153,14 @@ const envSchema = z.object({
   IMSES_API_BASE_URL: z.string().url().default('https://imses.crfmg.org.br/api'),
 
   // ── Integração Google Play (relatório de downloads — Fase 7.2) ──────────────
-  // JSON completo da service account (Play Developer Reporting API), como
-  // string de uma linha — nunca commitar o valor real.
+  // JSON da service account + package name + bucket GCS dos relatórios
+  // (Play Console → Download reports → Statistics → Copy Cloud Storage URI).
+  // Scope: devstorage.read_only. A service account precisa de "View app
+  // information and download bulk reports" na Play Console (nível da conta).
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
   GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
+  // Ex.: pubsite_prod_rev_01234567890987654321 (sem gs://)
+  GOOGLE_PLAY_STORAGE_BUCKET: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

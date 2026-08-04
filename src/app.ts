@@ -18,6 +18,7 @@ import familiesRoutes from './modules/families/families.routes.js'
 import filesRoutes from './modules/files/files.routes.js'
 import financialRoutes from './modules/financial/financial.routes.js'
 import gmailImportRoutes from './modules/gmail-import/gmail-import.routes.js'
+import gmailPushRoutes from './modules/gmail-import/gmail-push.routes.js'
 import gmailIntegrationRoutes from './modules/gmail-integration/gmail-integration.routes.js'
 import labEmailsRoutes from './modules/lab-emails/lab-emails.routes.js'
 import legalRoutes from './modules/legal/legal.routes.js'
@@ -128,6 +129,7 @@ export async function buildApp() {
   await app.register(medicalAccessRoutes, { prefix: env.API_PREFIX })
   await app.register(gmailIntegrationRoutes, { prefix: env.API_PREFIX })
   await app.register(gmailImportRoutes, { prefix: env.API_PREFIX })
+  await app.register(gmailPushRoutes, { prefix: env.API_PREFIX })
   await app.register(filesRoutes, { prefix: env.API_PREFIX })
   await app.register(usersRoutes, { prefix: env.API_PREFIX })
   await app.register(employeesRoutes, { prefix: env.API_PREFIX })

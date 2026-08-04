@@ -1,9 +1,12 @@
 import { gmailImportService } from '../../modules/gmail-import/gmail-import.service.js'
 
-/** Roda periodicamente (ver server.ts) — busca, para cada Gmail conectado com
- * autoImportEnabled, mensagens de remetentes cadastrados em LabEmail (status
- * ACTIVE) e importa laudos via IA. Nunca varre a caixa toda — a busca já sai
- * filtrada pelo allow-list de laboratórios. */
+/** Safety-net diário — só integrações sem users.watch válido. O caminho
+ * principal é o webhook Pub/Sub (gmail-push.routes.ts). */
 export async function gmailImportJob(): Promise<void> {
-  await gmailImportService.run()
+  await gmailImportService.runSafetyNet()
+}
+
+/** Renova users.watch antes da expiration (~7 dias). */
+export async function gmailRenewWatchesJob(): Promise<void> {
+  await gmailImportService.renewExpiringWatches()
 }

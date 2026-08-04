@@ -8,6 +8,38 @@ export const gmailImportRepository = {
     return db.gmailIntegration.findMany({ where: { status: 'CONNECTED', autoImportEnabled: true } })
   },
 
+  /** Integrações que precisam do polling raro (sem watch válido). */
+  findIntegrationsNeedingSafetyNet() {
+    const now = new Date()
+    return db.gmailIntegration.findMany({
+      where: {
+        status: 'CONNECTED',
+        autoImportEnabled: true,
+        OR: [{ watchExpiration: null }, { watchExpiration: { lte: now } }, { historyId: null }],
+      },
+    })
+  },
+
+  findWatchesNeedingRenewal(renewBefore: Date) {
+    return db.gmailIntegration.findMany({
+      where: {
+        status: 'CONNECTED',
+        autoImportEnabled: true,
+        OR: [{ watchExpiration: null }, { watchExpiration: { lte: renewBefore } }],
+      },
+    })
+  },
+
+  findConnectedByGoogleEmail(googleEmail: string) {
+    return db.gmailIntegration.findFirst({
+      where: {
+        googleEmail: { equals: googleEmail, mode: 'insensitive' },
+        status: 'CONNECTED',
+        autoImportEnabled: true,
+      },
+    })
+  },
+
   findActiveLabEmails() {
     return db.labEmail.findMany({ where: { status: 'ACTIVE' } })
   },
@@ -16,6 +48,7 @@ export const gmailImportRepository = {
     gmailIntegrationId: string,
     messageIds: string[],
   ): Promise<Set<string>> {
+    if (messageIds.length === 0) return new Set()
     const rows = await db.gmailImportedExam.findMany({
       where: { gmailIntegrationId, gmailMessageId: { in: messageIds } },
       select: { gmailMessageId: true },
@@ -39,6 +72,10 @@ export const gmailImportRepository = {
     userId: string,
     data: { accessTokenEncrypted: Buffer<ArrayBuffer>; tokenExpiresAt: Date },
   ) {
+    return db.gmailIntegration.update({ where: { userId }, data })
+  },
+
+  updateWatchCursor(userId: string, data: { historyId?: string; watchExpiration?: Date | null }) {
     return db.gmailIntegration.update({ where: { userId }, data })
   },
 

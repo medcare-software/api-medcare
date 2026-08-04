@@ -7,6 +7,8 @@ import {
   exchangeCodeForTokens,
   getUserInfo,
   revokeToken,
+  stopWatch,
+  watchMailbox,
 } from '../../shared/google/gmail-oauth.client.js'
 import { decryptField, encryptField, maskEmail } from '../../shared/security/index.js'
 import type { AuthUser, GmailOAuthStatePayload } from '../../shared/types/auth.types.js'
@@ -17,6 +19,31 @@ import type { UpdateGmailSettingsInput } from './gmail-integration.schema.js'
 // state de curta duração — só precisa sobreviver ao tempo do usuário completar
 // o consentimento no navegador do Google.
 const OAUTH_STATE_EXPIRES_IN = '10m'
+
+async function startWatchIfConfigured(
+  userId: string,
+  accessToken: string,
+): Promise<{ historyId: string; watchExpiration: Date } | null> {
+  if (!env.GMAIL_PUBSUB_TOPIC) {
+    console.info(
+      `[gmail-integration] GMAIL_PUBSUB_TOPIC ausente — watch não iniciado para user ${userId}.`,
+    )
+    return null
+  }
+  try {
+    const watch = await watchMailbox(accessToken, env.GMAIL_PUBSUB_TOPIC)
+    await gmailIntegrationRepository.updateWatch(userId, {
+      historyId: watch.historyId,
+      watchExpiration: watch.expiration,
+    })
+    return { historyId: watch.historyId, watchExpiration: watch.expiration }
+  } catch (err) {
+    console.error(
+      `[gmail-integration] Falha ao iniciar watch para user ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return null
+  }
+}
 
 export const gmailIntegrationService = {
   startConnect(fastify: FastifyInstance, user: AuthUser): { authUrl: string } {
@@ -64,6 +91,8 @@ export const gmailIntegrationService = {
         scope: tokens.scope,
       })
 
+      await startWatchIfConfigured(statePayload.sub, tokens.accessToken)
+
       return { redirectUrl: `${env.GOOGLE_OAUTH_APP_RETURN_SCHEME}?status=success` }
     } catch (err) {
       console.error(
@@ -96,12 +125,32 @@ export const gmailIntegrationService = {
       throw new AppError({ code: 'GMAIL_NOT_CONNECTED', message: 'Gmail não está conectado' })
     }
     await gmailIntegrationRepository.updateSettings(user.id, input)
+
+    // Reativa watch quando o usuário volta a habilitar auto-import.
+    if (input.autoImportEnabled && integration.refreshTokenEncrypted) {
+      const accessToken =
+        integration.accessTokenEncrypted &&
+        integration.tokenExpiresAt &&
+        integration.tokenExpiresAt.getTime() > Date.now()
+          ? decryptField(integration.accessTokenEncrypted)
+          : null
+      if (accessToken) {
+        await startWatchIfConfigured(user.id, accessToken)
+      }
+    }
   },
 
   async disconnect(user: AuthUser): Promise<void> {
     const integration = await gmailIntegrationRepository.findByUserId(user.id)
     if (!integration || integration.status !== 'CONNECTED') {
       throw new AppError({ code: 'GMAIL_NOT_CONNECTED', message: 'Gmail não está conectado' })
+    }
+    if (integration.accessTokenEncrypted) {
+      try {
+        await stopWatch(decryptField(integration.accessTokenEncrypted))
+      } catch {
+        // best-effort
+      }
     }
     if (integration.refreshTokenEncrypted) {
       await revokeToken(decryptField(integration.refreshTokenEncrypted))

@@ -978,6 +978,10 @@ model GmailIntegration {
   importedCount         Int                    @default(0)
   connectedAt           DateTime               @default(now())
   lastVerifiedAt        DateTime               @default(now())
+  // Cursor do Gmail History API + validade do users.watch (Pub/Sub push).
+  // Sem watch válido a integração cai no safety-net diário (não no poll por minuto).
+  historyId             String?
+  watchExpiration       DateTime?
   disconnectedAt        DateTime?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
@@ -985,6 +989,7 @@ model GmailIntegration {
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   gmailImportedExams GmailImportedExam[]
 
+  @@index([googleEmail])
   @@map("gmail_integrations")
 }
 
