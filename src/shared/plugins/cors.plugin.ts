@@ -4,12 +4,30 @@ import fp from 'fastify-plugin'
 
 import { env } from '../../config/env.js'
 
+/** Origens efêmeras do Expo Web (tunnel / metro) — não cabem em CORS_ORIGIN fixo. */
+function isExpoDevOrigin(origin: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(origin)
+    if (protocol !== 'http:' && protocol !== 'https:') return false
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return true
+    return (
+      hostname.endsWith('.exp.direct') ||
+      hostname.endsWith('.expo.dev') ||
+      hostname.endsWith('.ngrok-free.app') ||
+      hostname.endsWith('.ngrok-free.dev') ||
+      hostname.endsWith('.ngrok.io')
+    )
+  } catch {
+    return false
+  }
+}
+
 const corsPlugin: FastifyPluginAsync = fp(async (fastify) => {
   const allowedOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
 
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.includes(origin) || isExpoDevOrigin(origin)) {
         cb(null, true)
         return
       }
