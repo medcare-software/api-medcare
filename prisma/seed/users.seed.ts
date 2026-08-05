@@ -248,12 +248,38 @@ export async function seedUsers(db: PrismaClient) {
 
 type StoreReviewCred = { role: string; email: string; password: string }
 
+type StoreFamilyMemberAccount = {
+  role: 'PATIENT_ADMIN' | 'FAMILY_MEMBER'
+  email: string
+  password: string
+  name: string
+  displayName: string
+  cpf: string
+  birthDate: string
+  biologicalSex: 'MALE' | 'FEMALE'
+  relationship: string
+  isAdmin: boolean
+}
+
+/** Conta comum (admin da própria família) que já tem CaregiverAccess na família de review. */
+type StoreCaregiverDemoAccount = {
+  email: string
+  password: string
+  name: string
+  displayName: string
+  cpf: string
+  birthDate: string
+  biologicalSex: 'MALE' | 'FEMALE'
+  personalFamilyId: string
+  personalFamilyName: string
+}
+
 const STORE_REVIEW_ACCOUNTS = [
   {
     platform: 'apple',
     familyId: 'seed-family-apple-review',
     familyName: 'Família Apple Review',
-    accounts: [
+    members: [
       {
         role: 'PATIENT_ADMIN' as const,
         email: 'testeappleadmin@email.com',
@@ -278,20 +304,25 @@ const STORE_REVIEW_ACCOUNTS = [
         relationship: 'Cônjuge',
         isAdmin: false,
       },
-      {
-        role: 'CAREGIVER' as const,
-        email: 'testeapplecuidador@email.com',
-        password: 'applecuidador123',
-        name: 'Cuidador Apple Review',
-        cpf: '100.200.300-33',
-      },
-    ],
+    ] satisfies StoreFamilyMemberAccount[],
+    // Conta comum (login familiar) já autorizada a cuidar da família de review via Modo cuidador.
+    caregiverDemo: {
+      email: 'testeapplecuidador@email.com',
+      password: 'applecuidador123',
+      name: 'Cuidador Apple Review',
+      displayName: 'Cuidador Apple',
+      cpf: '100.200.300-33',
+      birthDate: '1988-07-15',
+      biologicalSex: 'MALE' as const,
+      personalFamilyId: 'seed-family-apple-caregiver',
+      personalFamilyName: 'Família Pessoal Cuidador Apple',
+    } satisfies StoreCaregiverDemoAccount,
   },
   {
     platform: 'android',
     familyId: 'seed-family-android-review',
     familyName: 'Família Android Review',
-    accounts: [
+    members: [
       {
         role: 'PATIENT_ADMIN' as const,
         email: 'testeandroidadmin@email.com',
@@ -316,18 +347,85 @@ const STORE_REVIEW_ACCOUNTS = [
         relationship: 'Filho',
         isAdmin: false,
       },
-      {
-        role: 'CAREGIVER' as const,
-        email: 'testeandroidcuidador@email.com',
-        password: 'androidcuidador123',
-        name: 'Cuidador Android Review',
-        cpf: '200.300.400-33',
-      },
-    ],
+    ] satisfies StoreFamilyMemberAccount[],
+    caregiverDemo: {
+      email: 'testeandroidcuidador@email.com',
+      password: 'androidcuidador123',
+      name: 'Cuidador Android Review',
+      displayName: 'Cuidador Android',
+      cpf: '200.300.400-33',
+      birthDate: '1987-11-03',
+      biologicalSex: 'FEMALE' as const,
+      personalFamilyId: 'seed-family-android-caregiver',
+      personalFamilyName: 'Família Pessoal Cuidador Android',
+    } satisfies StoreCaregiverDemoAccount,
   },
 ] as const
 
-/** Contas para App Store / Play review (admin, membro, cuidador × Apple/Android). */
+async function upsertAppFamilyUser(
+  db: PrismaClient,
+  account: StoreFamilyMemberAccount,
+  familyId: string,
+  passwordHash: string,
+) {
+  const user = await db.user.upsert({
+    where: { email: account.email },
+    create: {
+      name: account.name,
+      email: account.email,
+      passwordHash,
+      role: account.role,
+      status: 'ACTIVE',
+      ...cpfFields(account.cpf),
+    },
+    update: {
+      passwordHash,
+      status: 'ACTIVE',
+      name: account.name,
+      role: account.role,
+    },
+  })
+
+  const member = await db.familyMember.upsert({
+    where: { userId: user.id },
+    create: {
+      familyId,
+      userId: user.id,
+      fullNameEncrypted: encryptField(account.name),
+      displayName: account.displayName,
+      relationship: account.relationship,
+      birthDate: new Date(account.birthDate),
+      biologicalSex: account.biologicalSex,
+      isAdmin: account.isAdmin,
+      ...cpfFields(account.cpf),
+    },
+    update: {
+      displayName: account.displayName,
+      isAdmin: account.isAdmin,
+      familyId,
+    },
+  })
+
+  await db.healthProfile.upsert({
+    where: { memberId: member.id },
+    create: {
+      memberId: member.id,
+      weightKg: 70,
+      heightM: 1.7,
+      bloodType: 'O+',
+      conditions: [],
+      allergies: [],
+    },
+    update: {},
+  })
+
+  return user
+}
+
+/**
+ * Contas App Store / Play: admin + membro na família de review, e uma conta comum
+ * (PATIENT_ADMIN da própria família) já com CaregiverAccess — login normal + Modo cuidador.
+ */
 export async function seedStoreReviewUsers(db: PrismaClient): Promise<{ credentials: StoreReviewCred[] }> {
   const credentials: StoreReviewCred[] = []
 
@@ -338,97 +436,66 @@ export async function seedStoreReviewUsers(db: PrismaClient): Promise<{ credenti
       update: {},
     })
 
-    for (const account of group.accounts) {
+    for (const account of group.members) {
       const passwordHash = await bcrypt.hash(account.password, BCRYPT_ROUNDS)
-
-      if (account.role === 'CAREGIVER') {
-        const caregiverUser = await db.user.upsert({
-          where: { email: account.email },
-          create: {
-            name: account.name,
-            email: account.email,
-            passwordHash,
-            role: 'CAREGIVER',
-            status: 'ACTIVE',
-            ...cpfFields(account.cpf),
-          },
-          update: { passwordHash, status: 'ACTIVE', name: account.name },
-        })
-
-        const existingAccess = await db.caregiverAccess.findFirst({
-          where: { caregiverId: caregiverUser.id, familyId: family.id },
-        })
-        if (!existingAccess) {
-          await db.caregiverAccess.create({
-            data: {
-              caregiverId: caregiverUser.id,
-              familyId: family.id,
-              status: 'ACTIVE',
-              grantedAt: new Date(),
-            },
-          })
-        }
-
-        credentials.push({
-          role: `CAREGIVER (${group.platform})`,
-          email: account.email,
-          password: account.password,
-        })
-        continue
-      }
-
-      const user = await db.user.upsert({
-        where: { email: account.email },
-        create: {
-          name: account.name,
-          email: account.email,
-          passwordHash,
-          role: account.role,
-          status: 'ACTIVE',
-          ...cpfFields(account.cpf),
-        },
-        update: { passwordHash, status: 'ACTIVE', name: account.name, role: account.role },
-      })
-
-      const member = await db.familyMember.upsert({
-        where: { userId: user.id },
-        create: {
-          familyId: family.id,
-          userId: user.id,
-          fullNameEncrypted: encryptField(account.name),
-          displayName: account.displayName,
-          relationship: account.relationship,
-          birthDate: new Date(account.birthDate),
-          biologicalSex: account.biologicalSex,
-          isAdmin: account.isAdmin,
-          ...cpfFields(account.cpf),
-        },
-        update: {
-          displayName: account.displayName,
-          isAdmin: account.isAdmin,
-          familyId: family.id,
-        },
-      })
-
-      await db.healthProfile.upsert({
-        where: { memberId: member.id },
-        create: {
-          memberId: member.id,
-          weightKg: 70,
-          heightM: 1.7,
-          bloodType: 'O+',
-          conditions: [],
-          allergies: [],
-        },
-        update: {},
-      })
-
+      await upsertAppFamilyUser(db, account, family.id, passwordHash)
       credentials.push({
         role: `${account.role} (${group.platform})`,
         email: account.email,
         password: account.password,
       })
     }
+
+    const demo = group.caregiverDemo
+    const personalFamily = await db.family.upsert({
+      where: { id: demo.personalFamilyId },
+      create: { id: demo.personalFamilyId, name: demo.personalFamilyName },
+      update: {},
+    })
+
+    const passwordHash = await bcrypt.hash(demo.password, BCRYPT_ROUNDS)
+    const caregiverUser = await upsertAppFamilyUser(
+      db,
+      {
+        role: 'PATIENT_ADMIN',
+        email: demo.email,
+        password: demo.password,
+        name: demo.name,
+        displayName: demo.displayName,
+        cpf: demo.cpf,
+        birthDate: demo.birthDate,
+        biologicalSex: demo.biologicalSex,
+        relationship: 'Você',
+        isAdmin: true,
+      },
+      personalFamily.id,
+      passwordHash,
+    )
+
+    const existingAccess = await db.caregiverAccess.findFirst({
+      where: { caregiverId: caregiverUser.id, familyId: family.id },
+    })
+    if (!existingAccess) {
+      await db.caregiverAccess.create({
+        data: {
+          caregiverId: caregiverUser.id,
+          familyId: family.id,
+          status: 'ACTIVE',
+          grantedAt: new Date(),
+        },
+      })
+    } else if (existingAccess.status !== 'ACTIVE') {
+      await db.caregiverAccess.update({
+        where: { id: existingAccess.id },
+        data: { status: 'ACTIVE', grantedAt: new Date(), revokedAt: null },
+      })
+    }
+
+    credentials.push({
+      role: `PATIENT_ADMIN+cuidando (${group.platform})`,
+      email: demo.email,
+      password: demo.password,
+    })
   }
 
   return { credentials }

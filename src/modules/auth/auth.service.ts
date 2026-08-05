@@ -137,15 +137,15 @@ export const authService = {
 
     if (input.portal === 'app') {
       // Só entra no app quem tem FamilyMember — prestador só no web não passa.
+      // Cuidador não é um login separado: qualquer conta familiar pode abrir o
+      // "Modo cuidador" e resgatar códigos (CaregiverAccess).
       // Sessão usa papel de app derivado do vínculo (nunca DOCTOR/CLINIC_ADMIN).
       if (!verifiedUser.familyMember) {
         throw new AppError({ code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas' })
       }
       const appRole: Role = verifiedUser.familyMember.isAdmin
         ? 'PATIENT_ADMIN'
-        : verifiedUser.role === 'CAREGIVER'
-          ? 'CAREGIVER'
-          : 'FAMILY_MEMBER'
+        : 'FAMILY_MEMBER'
       return { ...verifiedUser, role: appRole }
     }
 
