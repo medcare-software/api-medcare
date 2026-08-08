@@ -7,7 +7,11 @@ export const CreateGrantSchema = z
     // Dias escolhidos na UI (30/60) quando validity=TEMPORARY — sem isso, o
     // prazo real do acesso sempre caía no default fixo do env, ignorando a
     // escolha do usuário entre "30 dias" e "60 dias".
-    temporaryDays: z.union([z.literal(30), z.literal(60)]).optional(),
+    // Aceita 30|60 numérico ou string (alguns clients serializam assim).
+    temporaryDays: z.preprocess(
+      (v) => (v === undefined || v === null || v === '' ? undefined : Number(v)),
+      z.union([z.literal(30), z.literal(60)]).optional(),
+    ),
   })
   .refine((data) => data.validity !== 'TEMPORARY' || data.temporaryDays !== undefined, {
     message: 'Informe o número de dias para acesso temporário',

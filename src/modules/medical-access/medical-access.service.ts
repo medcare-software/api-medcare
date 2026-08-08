@@ -36,11 +36,16 @@ export const medicalAccessService = {
     const codeHash = hashForLookup(code)
     const expiresAt = new Date(Date.now() + env.MEDICAL_ACCESS_CODE_TTL_MINUTES * 60_000)
 
+    const temporaryDays =
+      input.validity === 'TEMPORARY'
+        ? (input.temporaryDays ?? env.MEDICAL_ACCESS_TEMPORARY_GRANT_DAYS)
+        : undefined
+
     const grant = await medicalAccessRepository.create({
       memberId: input.memberId,
       codeHash,
       validity: input.validity,
-      ...(input.temporaryDays !== undefined && { temporaryDays: input.temporaryDays }),
+      ...(temporaryDays !== undefined && { temporaryDays }),
       expiresAt,
     })
 
