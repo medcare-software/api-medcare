@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client'
+
 import { AppError } from '../../shared/errors/index.js'
 import { recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
@@ -32,12 +34,28 @@ export const labEmailsService = {
   },
 
   async create(actor: AuthUser, input: CreateLabEmailInput) {
-    const existing = await labEmailsRepository.findByEmail(input.email)
-    if (existing) {
+    const existingAny = await labEmailsRepository.findByEmailAny(input.email)
+    if (existingAny && !existingAny.deletedAt) {
       throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
     }
 
-    const labEmail = await labEmailsRepository.create(input)
+    let labEmail
+    try {
+      if (existingAny?.deletedAt) {
+        // Soft-deleted ainda ocupava o UNIQUE — reativa em vez de inserir de novo.
+        labEmail = await labEmailsRepository.restore(existingAny.id, input)
+      } else {
+        labEmail = await labEmailsRepository.create(input)
+      }
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
+      }
+      throw err
+    }
 
     await recordAuditEvent({
       actorId: actor.id,
@@ -55,12 +73,29 @@ export const labEmailsService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'E-mail de laboratório não encontrado' })
     }
     if (input.email) {
-      const existing = await labEmailsRepository.findByEmail(input.email)
-      if (existing && existing.id !== id) {
+      const existing = await labEmailsRepository.findByEmailAny(input.email)
+      if (existing && existing.id !== id && !existing.deletedAt) {
         throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
       }
+      // Se o e-mail alvo está soft-deleted em outro registro, libera o UNIQUE
+      // renomeando aquele registro antes de aplicar o update.
+      if (existing && existing.id !== id && existing.deletedAt) {
+        await labEmailsRepository.softDelete(existing.id, existing.email)
+      }
     }
-    const updated = await labEmailsRepository.update(id, omitUndefined(input))
+
+    let updated
+    try {
+      updated = await labEmailsRepository.update(id, omitUndefined(input))
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new AppError({ code: 'CONFLICT', message: 'E-mail já cadastrado' })
+      }
+      throw err
+    }
 
     await recordAuditEvent({
       actorId: actor.id,
@@ -76,7 +111,7 @@ export const labEmailsService = {
     if (!labEmail) {
       throw new AppError({ code: 'NOT_FOUND', message: 'E-mail de laboratório não encontrado' })
     }
-    await labEmailsRepository.softDelete(id)
+    await labEmailsRepository.softDelete(id, labEmail.email)
     await recordAuditEvent({
       actorId: actor.id,
       action: 'DELETE_LAB_EMAIL',

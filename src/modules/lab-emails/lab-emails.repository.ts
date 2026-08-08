@@ -19,9 +19,23 @@ type UpdateLabEmailData = {
   status?: UserStatus
 }
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase()
+}
+
 export const labEmailsRepository = {
+  /** Ativo (não soft-deleted). */
   findByEmail(email: string) {
-    return db.labEmail.findFirst({ where: { email: email.toLowerCase(), deletedAt: null } })
+    return db.labEmail.findFirst({
+      where: { email: normalizeEmail(email), deletedAt: null },
+    })
+  },
+
+  /** Inclui soft-deleted — usado pra detectar colisão no UNIQUE de `email`. */
+  findByEmailAny(email: string) {
+    return db.labEmail.findFirst({
+      where: { email: normalizeEmail(email) },
+    })
   },
 
   findMany(filters: LabEmailListFilters, pagination: { skip: number; take: number }) {
@@ -63,21 +77,43 @@ export const labEmailsRepository = {
 
   create(data: CreateLabEmailData) {
     return db.labEmail.create({
-      data: { ...data, email: data.email.toLowerCase(), status: 'ACTIVE' },
+      data: { ...data, email: normalizeEmail(data.email), status: 'ACTIVE' },
+    })
+  },
+
+  /** Reativa um registro soft-deleted e atualiza nome/e-mail. */
+  restore(id: string, data: CreateLabEmailData) {
+    return db.labEmail.update({
+      where: { id },
+      data: {
+        name: data.name,
+        email: normalizeEmail(data.email),
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
     })
   },
 
   update(id: string, data: UpdateLabEmailData) {
     return db.labEmail.update({
       where: { id },
-      data: omitUndefined({ ...data, ...(data.email && { email: data.email.toLowerCase() }) }),
+      data: omitUndefined({
+        ...data,
+        ...(data.email && { email: normalizeEmail(data.email) }),
+      }),
     })
   },
 
-  softDelete(id: string) {
+  softDelete(id: string, currentEmail: string) {
+    const normalized = normalizeEmail(currentEmail)
+    // Libera o UNIQUE em `email` para permitir re-cadastro do mesmo endereço.
     return db.labEmail.update({
       where: { id },
-      data: { deletedAt: new Date(), status: 'INACTIVE' },
+      data: {
+        deletedAt: new Date(),
+        status: 'INACTIVE',
+        email: `deleted.${id}.${normalized}`,
+      },
     })
   },
 }
