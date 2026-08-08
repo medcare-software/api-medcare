@@ -894,6 +894,23 @@ model StoreDownloadSnapshot {
 }
 
 // ─────────────────────────────────────────────
+// Force update por plataforma (App Store / Play)
+// ─────────────────────────────────────────────
+
+model AppForceUpdateConfig {
+  id                 String    @id @default(cuid())
+  platform           String    @unique // "ios" | "android"
+  latestStoreVersion String    @default("")
+  forceUpdateEnabled Boolean   @default(false)
+  storeUrl           String
+  lastFetchedAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("app_force_update_configs")
+}
+
+// ─────────────────────────────────────────────
 // Funcionários internos da plataforma (diretório, sem login/auth)
 // ─────────────────────────────────────────────
 

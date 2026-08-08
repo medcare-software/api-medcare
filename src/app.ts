@@ -3,6 +3,7 @@ import Fastify from 'fastify'
 
 import { env } from './config/env.js'
 import anvisaMedicationsRoutes from './modules/anvisa-medications/anvisa-medications.routes.js'
+import appForceUpdateRoutes from './modules/app-force-update/app-force-update.routes.js'
 import auditLogsRoutes from './modules/audit-logs/audit-logs.routes.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import caregiverRoutes from './modules/caregiver/caregiver.routes.js'
@@ -107,6 +108,7 @@ export async function buildApp() {
   // ── Módulos ───────────────────────────────────────────────────────────────
   await app.register(authRoutes, { prefix: env.API_PREFIX })
   await app.register(legalRoutes, { prefix: env.API_PREFIX })
+  await app.register(appForceUpdateRoutes, { prefix: env.API_PREFIX })
   await app.register(familiesRoutes, { prefix: env.API_PREFIX })
   await app.register(caregiverRoutes, { prefix: env.API_PREFIX })
   await app.register(doctorsRoutes, { prefix: env.API_PREFIX })
