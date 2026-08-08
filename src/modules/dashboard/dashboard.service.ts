@@ -15,6 +15,31 @@ function startOfMonth(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), 1)
 }
 
+function monthKeyUtc(date: Date) {
+  return date.toISOString().slice(0, 7)
+}
+
+/** Preenche meses vazios a partir da série de cadastros (fallback do chart). */
+function monthlyPlatformFromSignups(
+  signups: { month: string; count: number }[],
+  months: number,
+) {
+  const byMonth = new Map(signups.map((row) => [row.month, row.count]))
+  const result: { month: string; ios: number; android: number; total: number }[] = []
+  const cursor = new Date()
+  cursor.setUTCDate(1)
+  cursor.setUTCHours(0, 0, 0, 0)
+  cursor.setUTCMonth(cursor.getUTCMonth() - (months - 1))
+
+  for (let i = 0; i < months; i += 1) {
+    const month = monthKeyUtc(cursor)
+    const total = byMonth.get(month) ?? 0
+    result.push({ month, ios: 0, android: 0, total })
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+  }
+  return result
+}
+
 export const dashboardService = {
   async getOverview(query: DashboardQuery) {
     const monthStart = startOfMonth()
@@ -24,7 +49,7 @@ export const dashboardService = {
       doctorsByStatus,
       usersByRole,
       monthlyRevenue,
-      monthlySignups,
+      monthlySignupsRaw,
       platformBreakdown,
       storeDownloads,
       totalDownloadsAgg,
@@ -34,8 +59,8 @@ export const dashboardService = {
       topSpecialty,
       topState,
       previousMonthRevenue,
-      monthlyDownloads,
-      monthlyDownloadsByPlatform,
+      monthlyDownloadsRaw,
+      monthlyDownloadsByPlatformRaw,
       stateBreakdown,
     ] = await Promise.all([
       dashboardRepository.countClinicsByStatus(),
@@ -62,8 +87,34 @@ export const dashboardService = {
     const activeDoctors = countByStatus(doctorsByStatus, 'ACTIVE')
     const inactiveDoctors = countByStatus(doctorsByStatus, 'INACTIVE')
     const totalAppUsers = sumAll(usersByRole)
-    const totalDownloads = totalDownloadsAgg._sum.downloadCount ?? 0
-    const downloadsThisMonth = downloadsThisMonthAgg._sum.downloadCount ?? 0
+
+    const monthlySignups = monthlySignupsRaw.map((row) => ({
+      month: monthKeyUtc(row.month),
+      count: Number(row.count),
+    }))
+    const monthlyDownloads = monthlyDownloadsRaw.map((row) => ({
+      month: monthKeyUtc(row.month),
+      count: Number(row.count),
+    }))
+
+    const storeHasData = monthlyDownloadsByPlatformRaw.some((row) => row.total > 0)
+    const storesConfigured =
+      storeDownloads.configured.ios || storeDownloads.configured.android
+    // Sem snapshots das lojas, o chart/KPIs de download usam cadastros como proxy
+    // (mesmo critério do relatório de crescimento) para não ficar "morto".
+    const downloadsChartSource = storeHasData ? ('stores' as const) : ('signups' as const)
+    const monthlyDownloadsByPlatform = storeHasData
+      ? monthlyDownloadsByPlatformRaw
+      : monthlyPlatformFromSignups(monthlySignups, query.months)
+
+    const signupTotal = monthlySignups.reduce((sum, row) => sum + row.count, 0)
+    const signupThisMonth = monthlySignups.at(-1)?.count ?? 0
+    const totalDownloads = storeHasData
+      ? (totalDownloadsAgg._sum.downloadCount ?? 0)
+      : signupTotal
+    const downloadsThisMonth = storeHasData
+      ? (downloadsThisMonthAgg._sum.downloadCount ?? 0)
+      : signupThisMonth
 
     let mrrChangePercent = 0
     if (previousMonthRevenue > 0) {
@@ -90,15 +141,11 @@ export const dashboardService = {
         doctorsCreatedThisMonth,
         mrrChangePercent: Math.round(mrrChangePercent * 10) / 10,
       },
-      monthlySignups: monthlySignups.map((row) => ({
-        month: row.month.toISOString().slice(0, 7),
-        count: Number(row.count),
-      })),
-      monthlyDownloads: monthlyDownloads.map((row) => ({
-        month: row.month.toISOString().slice(0, 7),
-        count: Number(row.count),
-      })),
+      monthlySignups,
+      monthlyDownloads,
       monthlyDownloadsByPlatform,
+      downloadsChartSource,
+      storesConfigured,
       clientTypeBreakdown: [
         { id: 'clinics', label: 'Clínicas', count: activeClinics },
         { id: 'doctors', label: 'Médicos', count: activeDoctors },

@@ -583,12 +583,21 @@ export const reportsService = {
     const totalSignups = cumulative
     const newSignupsThisMonth = series.length > 0 ? (series.at(-1)?.newSignups ?? 0) : 0
     const totalAppUsers = roleBreakdown.reduce((sum, row) => sum + row._count._all, 0)
-    const storesConfigured =
-      storeDownloads.configured.ios || storeDownloads.configured.android
-    // Sem lojas configuradas, cai para cadastros como aproximação legada.
-    const totalDownloads = storesConfigured ? allTimeDownloads.total : totalSignups
-    const downloadsThisMonthValue = storesConfigured ? downloadsThisMonth : newSignupsThisMonth
+    const storeHasData = monthlyDownloads.some((row) => row.total > 0)
+    // Credenciais sozinhas não bastam — se a tabela ainda está vazia (cron só
+    // puxa D-1), cai para cadastros como aproximação até o backfill popular.
+    const totalDownloads = storeHasData ? allTimeDownloads.total : totalSignups
+    const downloadsThisMonthValue = storeHasData ? downloadsThisMonth : newSignupsThisMonth
     const retentionRate = totalAppUsers > 0 ? 1 - usersAtRisk / totalAppUsers : 0
+
+    const monthlyDownloadsForChart = storeHasData
+      ? monthlyDownloads
+      : series.map((row) => ({
+          month: row.month,
+          ios: 0,
+          android: 0,
+          total: row.newSignups,
+        }))
 
     return {
       kpis: {
@@ -599,7 +608,8 @@ export const reportsService = {
         avgMedicationsPerUser: Math.round(avgMedicationsPerUser * 10) / 10,
       },
       series,
-      monthlyDownloads,
+      monthlyDownloads: monthlyDownloadsForChart,
+      downloadsChartSource: storeHasData ? ('stores' as const) : ('signups' as const),
       downloadsByPlatform: allTimeDownloads.byPlatform,
       stateDistribution: stateBreakdown.map((row) => ({
         state: row.state ?? 'Não informado',

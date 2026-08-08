@@ -134,9 +134,11 @@ export const dashboardRepository = {
 
   monthlyDownloadSeries(months: number) {
     return db.$queryRaw<{ month: Date; count: bigint }[]>`
-      SELECT date_trunc('month', date) AS month, sum("downloadCount")::bigint AS count
+      SELECT date_trunc('month', date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS month,
+             sum("downloadCount")::bigint AS count
       FROM store_download_snapshots
-      WHERE date >= now() - make_interval(months => ${months}::int)
+      WHERE date >= (date_trunc('month', now() AT TIME ZONE 'UTC') - make_interval(months => ${months}::int))
+            AT TIME ZONE 'UTC'
       GROUP BY 1
       ORDER BY 1
     `

@@ -34,6 +34,30 @@ const start = async () => {
       })
     })
 
+    // Se a tabela de snapshots estiver vazia e houver credenciais, faz um
+    // backfill curto em background no boot — evita home/relatório zerados até
+    // alguém lembrar de rodar o script manualmente.
+    void (async () => {
+      const { storeAnalyticsService } = await import(
+        './modules/store-analytics/store-analytics.service.js'
+      )
+      const configured = storeAnalyticsService.isConfigured()
+      if (!configured.ios && !configured.android) return
+      const totals = await storeAnalyticsService.getAllTimeTotals()
+      if (totals.total > 0) return
+      app.log.info(
+        '[store-analytics] snapshots vazios — iniciando backfill automático (30 dias)',
+      )
+      await storeAnalyticsService.syncDownloads({ daysBack: 30, throttleMs: 400 })
+      const after = await storeAnalyticsService.getAllTimeTotals()
+      app.log.info(
+        { total: after.total, byPlatform: after.byPlatform },
+        '[store-analytics] backfill automático concluído',
+      )
+    })().catch((err) => {
+      app.log.error(err, '[store-analytics] falha no backfill automático do boot')
+    })
+
     // Gmail: caminho principal = Pub/Sub (POST /webhooks/gmail-push).
     // Safety-net 1×/dia (03:00) só para integrações sem watch válido.
     cron.schedule('0 3 * * *', () => {

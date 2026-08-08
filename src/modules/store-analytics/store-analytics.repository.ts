@@ -54,10 +54,15 @@ export const storeAnalyticsRepository = {
   },
 
   monthlySeriesByPlatform(months: number) {
+    // Truncamento em UTC para o month key bater com o fill do service
+    // (`toISOString().slice(0, 7)`), independente do TimeZone da sessão PG.
     return db.$queryRaw<{ month: Date; platform: string; count: bigint }[]>`
-      SELECT date_trunc('month', date) AS month, platform, sum("downloadCount")::bigint AS count
+      SELECT date_trunc('month', date AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS month,
+             platform,
+             sum("downloadCount")::bigint AS count
       FROM store_download_snapshots
-      WHERE date >= date_trunc('month', now()) - make_interval(months => (${months}::int - 1))
+      WHERE date >= (date_trunc('month', now() AT TIME ZONE 'UTC') - make_interval(months => (${months}::int - 1)))
+            AT TIME ZONE 'UTC'
       GROUP BY 1, 2
       ORDER BY 1, 2
     `
