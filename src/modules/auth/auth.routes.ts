@@ -136,6 +136,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         // Papel da sessão (JWT), não User.role do banco — multi-papel.
         role: req.user.role,
         phone: user.phone,
+        state: user.state,
+        city: user.city,
         cpf: user.cpfEncrypted ? decryptField(user.cpfEncrypted) : null,
         status: user.status,
         professionalTermsAccepted: hasAcceptedProfessionalTerms(user),
@@ -155,6 +157,16 @@ export default async function authRoutes(fastify: FastifyInstance) {
               familyId: user.familyMember.familyId,
               isAdmin: user.familyMember.isAdmin,
               familyName: user.familyMember.family?.name ?? null,
+              birthDate: user.familyMember.birthDate,
+              biologicalSex: user.familyMember.biologicalSex,
+              hasCpf: !!user.familyMember.cpfHash,
+              healthProfile: user.familyMember.healthProfile
+                ? {
+                    weightKg: user.familyMember.healthProfile.weightKg,
+                    heightM: user.familyMember.healthProfile.heightM,
+                    bloodType: user.familyMember.healthProfile.bloodType,
+                  }
+                : null,
             }
           : null,
       },

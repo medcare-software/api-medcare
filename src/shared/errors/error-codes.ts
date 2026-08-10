@@ -25,6 +25,8 @@ export const ErrorCode = {
   ACCESS_CODE_INVALID: 'ACCESS_CODE_INVALID',
   ACCESS_CODE_EXPIRED: 'ACCESS_CODE_EXPIRED',
   CLINIC_EMAIL_REQUIRED: 'CLINIC_EMAIL_REQUIRED',
+  // Perfil clínico incompleto (cadastro parcial) — app abre modal para completar.
+  PROFILE_INCOMPLETE: 'PROFILE_INCOMPLETE',
 
   // ── Rate limit ───────────────────────────────────────
   RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',

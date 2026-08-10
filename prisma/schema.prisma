@@ -253,7 +253,9 @@ model FamilyMember {
   fullNameEncrypted Bytes
   displayName       String // nome não sigiloso para exibição em listas/avatares
   relationship      String // "Você", "Esposa", "Filho", etc.
-  birthDate         DateTime
+  // Nullable: cadastro parcial do app — admin pode criar conta sem data de nascimento
+  // e completar depois (gate clínico PROFILE_INCOMPLETE).
+  birthDate         DateTime?
   biologicalSex     BiologicalSex?
   cpfEncrypted      Bytes?
   cpfHash           String?        @unique

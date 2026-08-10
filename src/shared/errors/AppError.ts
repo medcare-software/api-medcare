@@ -35,6 +35,7 @@ export class AppError extends Error {
       FORBIDDEN: 403,
       MEDICAL_ACCESS_REQUIRED: 403,
       CLINIC_EMAIL_REQUIRED: 422,
+      PROFILE_INCOMPLETE: 403,
       NOT_FOUND: 404,
       CONFLICT: 409,
       PLAN_LIMIT_REACHED: 409,

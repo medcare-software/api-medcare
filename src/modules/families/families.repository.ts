@@ -22,7 +22,7 @@ type CreateFamilyWithAdminData = {
   /** Nome completo em claro — usado só para derivar Family.name (não é persistido). */
   fullName: string
   displayName: string
-  birthDate: Date
+  birthDate?: Date
   biologicalSex?: BiologicalSex
 } & ConsumerTermsAcceptance
 
@@ -30,7 +30,7 @@ type CreateFamilyMemberData = {
   fullNameEncrypted: Buffer<ArrayBuffer>
   displayName: string
   relationship: string
-  birthDate: Date
+  birthDate?: Date
   biologicalSex?: BiologicalSex
   cpfEncrypted?: Buffer<ArrayBuffer>
   cpfHash?: string
@@ -292,6 +292,13 @@ export const familiesRepository = {
       })
 
       return member
+    })
+  },
+
+  updateLinkedUserLocation(userId: string, data: { state: string; city: string }) {
+    return db.user.update({
+      where: { id: userId },
+      data: { state: data.state, city: data.city },
     })
   },
 

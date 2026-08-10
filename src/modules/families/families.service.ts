@@ -26,6 +26,7 @@ import type { AuthUser } from '../../shared/types/auth.types.js'
 import { CONSUMER_TERMS_VERSION } from '../legal/legal.service.js'
 import { familiesRepository } from './families.repository.js'
 import type {
+  CompleteOwnProfileInput,
   CreateFamilyMemberInput,
   RegisterInput,
   UpdateFamilyMemberInput,
@@ -92,7 +93,7 @@ export const familiesService = {
       fullNameEncrypted: encryptField(input.fullName),
       fullName: input.fullName,
       displayName: input.displayName,
-      birthDate: input.birthDate,
+      ...(input.birthDate !== undefined && { birthDate: input.birthDate }),
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
       termsOfUseAcceptedAt: now,
       privacyPolicyAcceptedAt: now,
@@ -242,6 +243,43 @@ export const familiesService = {
       ...(input.notes !== undefined && { notesEncrypted: encryptField(input.notes) }),
     })
     return toHealthProfileResponse(profile)
+  },
+
+  // Completa a 2ª parte do cadastro do próprio FamilyMember (nascimento/UF/cidade/sexo/saúde).
+  async completeOwnProfile(user: AuthUser, input: CompleteOwnProfileInput) {
+    const ownId = await resolveOwnMemberId(user)
+    if (!ownId) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Registro não encontrado' })
+    }
+    const member = await getScopedOrThrow(user, ownId)
+    await assertFamilyProfileWriteAllowed(user, member)
+
+    await familiesRepository.updateMember(ownId, {
+      birthDate: input.birthDate,
+      biologicalSex: input.biologicalSex,
+    })
+
+    if (member.userId) {
+      await familiesRepository.updateLinkedUserLocation(member.userId, {
+        state: input.state.toUpperCase(),
+        city: input.city.trim(),
+      })
+    }
+
+    const profile = await familiesRepository.upsertHealthProfile(ownId, {
+      weightKg: input.weightKg,
+      heightM: input.heightM,
+      bloodType: input.bloodType,
+      conditions: input.conditions,
+      allergies: input.allergies,
+      ...(input.notes !== undefined && { notesEncrypted: encryptField(input.notes) }),
+    })
+
+    const updated = await getScopedOrThrow(user, ownId)
+    return {
+      member: toMemberDetail(updated, user.role),
+      healthProfile: toHealthProfileResponse(profile),
+    }
   },
 
   async deleteMember(user: AuthUser, id: string) {

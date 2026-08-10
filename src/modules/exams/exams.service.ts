@@ -1,6 +1,7 @@
 import { db } from '../../config/database.js'
 import {
   assertActiveMedicalAccessGrant,
+  assertClinicalProfileComplete,
   assertClinicalReadAccess,
   assertOwnScopedMemberInScope,
   isFamilyRole,
@@ -108,6 +109,7 @@ function toResponse(exam: {
 async function assertExamWriteAccess(user: AuthUser, memberId: string) {
   if (isFamilyRole(user.role)) {
     await assertOwnScopedMemberInScope(user, memberId)
+    await assertClinicalProfileComplete(memberId)
     return
   }
   if (user.role === 'DOCTOR') {

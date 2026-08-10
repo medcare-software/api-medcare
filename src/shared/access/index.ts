@@ -1,5 +1,9 @@
 export { assertClinicalReadAccess, assertClinicalWriteAccess } from './clinical-access.js'
 export {
+  assertClinicalProfileComplete,
+  isClinicalProfileComplete,
+} from './clinical-profile.js'
+export {
   assertActiveMedicalAccessGrant,
   assertFamilyInScope,
   assertMemberInScope,

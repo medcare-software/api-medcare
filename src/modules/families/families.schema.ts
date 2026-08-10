@@ -1,9 +1,11 @@
 import { z } from 'zod'
-import { requiredDate } from '../../shared/utils/zod-date.js'
+import { optionalDate, requiredDate } from '../../shared/utils/zod-date.js'
 
 const BiologicalSexEnum = z.enum(['MALE', 'FEMALE'])
 
-// POST /auth/register — cria o User(PATIENT_ADMIN) + Family + FamilyMember admin
+// POST /auth/register — cria o User(PATIENT_ADMIN) + Family + FamilyMember admin.
+// Cadastro parcial do app: CPF + identidade + termos na 1ª etapa; nascimento/UF/cidade/
+// sexo/saúde podem vir depois via CompleteOwnProfileSchema.
 export const RegisterSchema = z.object({
   email: z.string().email({ message: 'E-mail inválido' }),
   password: z.string().min(8, 'Senha deve ter no mínimo 8 caracteres'),
@@ -13,7 +15,7 @@ export const RegisterSchema = z.object({
   cpf: z.string().min(11, 'CPF inválido'),
   fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
   displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
-  birthDate: requiredDate('Data de nascimento inválida', {
+  birthDate: optionalDate('Data de nascimento inválida', {
     notFuture: true,
     futureMessage: 'Data de nascimento não pode ser no futuro',
   }),
@@ -27,6 +29,23 @@ export const RegisterSchema = z.object({
   lgpdConsentAccepted: z.literal(true, {
     errorMap: () => ({ message: 'É necessário autorizar o processamento de dados conforme a LGPD' }),
   }),
+})
+
+// PUT /family-members/me/complete-profile — completa a 2ª parte do cadastro do próprio membro.
+export const CompleteOwnProfileSchema = z.object({
+  birthDate: requiredDate('Data de nascimento inválida', {
+    notFuture: true,
+    futureMessage: 'Data de nascimento não pode ser no futuro',
+  }),
+  state: z.string().length(2, { message: 'UF inválida' }),
+  city: z.string().min(1, { message: 'Cidade é obrigatória' }),
+  biologicalSex: BiologicalSexEnum,
+  weightKg: z.number().positive({ message: 'Peso deve ser um número positivo' }),
+  heightM: z.number().positive({ message: 'Altura deve ser um número positivo' }),
+  bloodType: z.string().min(1, { message: 'Tipo sanguíneo é obrigatório' }),
+  conditions: z.array(z.string()).default([]),
+  allergies: z.array(z.string()).default([]),
+  notes: z.string().min(1, { message: 'Observação não pode ser vazia' }).optional(),
 })
 
 // Sem o .superRefine — base compartilhada com UpdateFamilyMemberSchema.
@@ -61,6 +80,7 @@ export const UpsertHealthProfileSchema = z.object({
 })
 
 export type RegisterInput = z.infer<typeof RegisterSchema>
+export type CompleteOwnProfileInput = z.infer<typeof CompleteOwnProfileSchema>
 export type CreateFamilyMemberInput = z.infer<typeof CreateFamilyMemberSchema>
 export type UpdateFamilyMemberInput = z.infer<typeof UpdateFamilyMemberSchema>
 export type UpsertHealthProfileInput = z.infer<typeof UpsertHealthProfileSchema>

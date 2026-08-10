@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 
 import {
   assertActiveMedicalAccessGrant,
+  assertClinicalProfileComplete,
   assertClinicalReadAccess,
   assertOwnScopedMemberInScope,
   resolveDoctorId,
@@ -111,6 +112,7 @@ function assertFamilyWriter(user: AuthUser) {
 async function assertVaccineWriteAccess(user: AuthUser, memberId: string) {
   if (FAMILY_WRITER_ROLES.includes(user.role)) {
     await assertOwnScopedMemberInScope(user, memberId)
+    await assertClinicalProfileComplete(memberId)
     return
   }
   if (user.role === 'DOCTOR') {

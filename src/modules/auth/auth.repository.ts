@@ -53,7 +53,13 @@ export const authRepository = {
             id: true,
             familyId: true,
             isAdmin: true,
+            birthDate: true,
+            biologicalSex: true,
+            cpfHash: true,
             family: { select: { name: true } },
+            healthProfile: {
+              select: { weightKg: true, heightM: true, bloodType: true },
+            },
           },
         },
       },

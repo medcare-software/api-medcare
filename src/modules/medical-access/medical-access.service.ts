@@ -4,6 +4,7 @@ import type { AccessStatus } from '@prisma/client'
 import { db } from '../../config/database.js'
 import { env } from '../../config/env.js'
 import {
+  assertClinicalProfileComplete,
   assertOwnScopedMemberInScope,
   resolveClinicId,
   resolveDoctorId,
@@ -31,6 +32,7 @@ export const medicalAccessService = {
 
   async createGrant(user: AuthUser, input: CreateGrantInput) {
     await assertOwnScopedMemberInScope(user, input.memberId)
+    await assertClinicalProfileComplete(input.memberId)
 
     const code = String(crypto.randomInt(100000, 1000000))
     const codeHash = hashForLookup(code)

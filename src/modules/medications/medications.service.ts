@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '../../config/database.js'
 import { env } from '../../config/env.js'
 import {
+  assertClinicalProfileComplete,
   assertClinicalReadAccess,
   assertOwnScopedMemberInScope,
   resolveOwnScopedMemberIds,
@@ -41,6 +42,7 @@ export const medicationsService = {
   async create(user: AuthUser, input: CreateMedicationInput, idempotencyKey?: string) {
     assertFamilyWriter(user)
     await assertCanManageMedicationCatalog(user, input.memberId)
+    await assertClinicalProfileComplete(input.memberId)
 
     if (idempotencyKey) {
       const existing = await medicationsRepository.findByIdempotencyKey(idempotencyKey)

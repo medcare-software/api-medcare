@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { issueTokens } from '../../shared/auth/issue-tokens.js'
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import {
+  CompleteOwnProfileSchema,
   CreateFamilyMemberSchema,
   RegisterSchema,
   UpdateFamilyMemberSchema,
@@ -75,6 +76,24 @@ export default async function familiesRoutes(fastify: FastifyInstance) {
       const { familyId } = req.params as { familyId: string }
       const members = await familiesService.listMembers(req.user, familyId)
       return reply.status(200).send({ data: members })
+    },
+  )
+
+  // PUT /family-members/me/complete-profile — 2ª parte do cadastro (próprio membro)
+  fastify.put(
+    '/family-members/me/complete-profile',
+    { preHandler: [authenticate, authorize(...FAMILY_PROFILE_WRITERS)] },
+    async (req, reply) => {
+      const body = CompleteOwnProfileSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      const result = await familiesService.completeOwnProfile(req.user, body.data)
+      return reply.status(200).send({ data: result })
     },
   )
 
