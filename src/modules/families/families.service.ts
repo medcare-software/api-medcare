@@ -182,11 +182,19 @@ export const familiesService = {
       }
     }
 
+    // Data de nascimento só pode ser preenchida uma vez — depois fica imutável.
+    if (input.birthDate !== undefined && member.birthDate) {
+      throw new AppError({
+        code: 'CONFLICT',
+        message: 'Data de nascimento não pode ser alterada',
+      })
+    }
+
     const memberData = {
       ...(input.fullName !== undefined && { fullNameEncrypted: encryptField(input.fullName) }),
       ...(input.displayName !== undefined && { displayName: input.displayName }),
       ...(input.relationship !== undefined && { relationship: input.relationship }),
-      ...(input.birthDate !== undefined && { birthDate: input.birthDate }),
+      ...(input.birthDate !== undefined && !member.birthDate && { birthDate: input.birthDate }),
       ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
       ...(input.isAdmin !== undefined && { isAdmin: input.isAdmin }),
       ...cpfFields,
