@@ -140,11 +140,22 @@ export const medicationsService = {
               resolveFamilyCaregiverUserIds(familyId),
             ])
           : [[], []]
-        const recipientIds = [...new Set([...adminUserIds, ...caregiverUserIds])]
+        // Inclui quem registrou a dose — senão o próprio paciente/admin da
+        // sessão pode não receber se a resolução de família falhar/atrasar.
+        const recipientIds = [
+          ...new Set([...adminUserIds, ...caregiverUserIds, user.id]),
+        ]
+        const title = newStock <= 0 ? 'Estoque esgotado' : 'Estoque acabando'
+        const body =
+          newStock <= 0
+            ? `${medication.name} acabou. Reponha o estoque.`
+            : `${medication.name} está acabando (${newStock} restante${
+                newStock === 1 ? '' : 's'
+              }).`
         for (const recipientId of recipientIds) {
           await sendPushToUser(recipientId, {
-            title: 'Estoque acabando',
-            body: `${medication.name} está acabando (${newStock} restante${newStock === 1 ? '' : 's'}).`,
+            title,
+            body,
             data: {
               type: 'medication-low-stock',
               medicationId: medication.id,
