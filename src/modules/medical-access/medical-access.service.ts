@@ -49,23 +49,29 @@ export const medicalAccessService = {
       expiresAt,
     })
 
-    // Confirmação pra quem concedeu — fire-and-forget: não atrasa o 201 nem
-    // mascara falha de push/Expo como "Sem conexão" no app após o grant já gravado.
-    void db.familyMember
-      .findUnique({
-        where: { id: input.memberId },
-        select: { displayName: true },
-      })
-      .then((member) =>
-        sendPushToUser(user.id, {
-          title: 'Acesso concedido',
-          body: `Código de acesso gerado para ${member?.displayName ?? 'um membro da família'}.`,
-          data: { type: 'medical-access-granted', grantId: grant.id },
-        }),
-      )
-      .catch((err) => {
-        console.error('[medical-access] falha ao notificar grant criado', err)
-      })
+    // Confirmação pra quem concedeu — só depois do event loop liberar o 201.
+    // Começar o push no mesmo tick ainda competia por DB/rede e, no RN, falha
+    // de socket virava "Sem conexão" mesmo com o grant já gravado.
+    const actorUserId = user.id
+    const memberId = input.memberId
+    const grantId = grant.id
+    setImmediate(() => {
+      void db.familyMember
+        .findUnique({
+          where: { id: memberId },
+          select: { displayName: true },
+        })
+        .then((member) =>
+          sendPushToUser(actorUserId, {
+            title: 'Acesso concedido',
+            body: `Código de acesso gerado para ${member?.displayName ?? 'um membro da família'}.`,
+            data: { type: 'medical-access-granted', grantId },
+          }),
+        )
+        .catch((err) => {
+          console.error('[medical-access] falha ao notificar grant criado', err)
+        })
+    })
 
     // Código em texto plano só existe nesta resposta — nunca é persistido (só codeHash acima).
     return { id: grant.id, code, expiresAt: grant.expiresAt, validity: grant.validity }
