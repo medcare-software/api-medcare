@@ -11,8 +11,14 @@ import { vaccinesService } from './vaccines.service.js'
 
 const FAMILY_WRITERS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER'] as const
 const VACCINE_DELETERS = ['PATIENT_ADMIN', 'CAREGIVER'] as const
-// Cadastro (não edição/exclusão) também é liberado pro médico com grant ativo — ver vaccines.service.ts.
-const VACCINE_CREATORS = ['PATIENT_ADMIN', 'FAMILY_MEMBER', 'CAREGIVER', 'DOCTOR'] as const
+// Cadastro (não edição/exclusão) também é liberado pro médico/clínica com grant ativo — ver vaccines.service.ts.
+const VACCINE_CREATORS = [
+  'PATIENT_ADMIN',
+  'FAMILY_MEMBER',
+  'CAREGIVER',
+  'DOCTOR',
+  'CLINIC_ADMIN',
+] as const
 
 export default async function vaccinesRoutes(fastify: FastifyInstance) {
   // GET /vaccines?memberId=

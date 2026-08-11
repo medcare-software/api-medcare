@@ -6,7 +6,7 @@ import {
   assertClinicalProfileComplete,
   assertClinicalReadAccess,
   assertOwnScopedMemberInScope,
-  resolveDoctorId,
+  resolveClinicalAuthorDoctorId,
   resolveOwnScopedMemberIds,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
@@ -39,18 +39,22 @@ export const vaccinesService = {
   async create(user: AuthUser, input: CreateVaccineInput) {
     await assertVaccineWriteAccess(user, input.memberId)
     const { memberId, ...data } = input
+    const isClinicalAuthor = user.role === 'DOCTOR' || user.role === 'CLINIC_ADMIN'
     const vaccine = await vaccinesRepository.create(memberId, {
       ...data,
-      ...(user.role === 'DOCTOR' && { doctorId: await resolveDoctorId(user.id) }),
+      ...(isClinicalAuthor && {
+        doctorId: await resolveClinicalAuthorDoctorId(user, memberId),
+      }),
     })
 
-    if (user.role === 'DOCTOR') {
+    if (isClinicalAuthor) {
       const familyId = await resolveFamilyIdForMember(memberId)
       const adminUserIds = familyId ? await resolveFamilyAdminUserIds(familyId) : []
+      const senderLabel = user.role === 'DOCTOR' ? 'Um médico' : 'Uma clínica'
       for (const adminUserId of adminUserIds) {
         await sendPushToUser(adminUserId, {
           title: 'Nova vacina recebida',
-          body: `Um médico registrou a vacina "${vaccine.name}".`,
+          body: `${senderLabel} registrou a vacina "${vaccine.name}".`,
           data: { type: 'vaccine-shared', vaccineId: vaccine.id, memberId },
         })
       }
@@ -107,7 +111,7 @@ function assertFamilyWriter(user: AuthUser) {
   }
 }
 
-// Escritores de cadastro (create/recordDose): família (via escopo) ou DOCTOR com grant ativo.
+// Escritores de cadastro (create/recordDose): família (via escopo) ou DOCTOR/CLINIC_ADMIN com grant ativo.
 // update/remove continuam restritos à família (assertFamilyWriter/assertFamilyDeleter).
 async function assertVaccineWriteAccess(user: AuthUser, memberId: string) {
   if (FAMILY_WRITER_ROLES.includes(user.role)) {
@@ -115,7 +119,7 @@ async function assertVaccineWriteAccess(user: AuthUser, memberId: string) {
     await assertClinicalProfileComplete(memberId)
     return
   }
-  if (user.role === 'DOCTOR') {
+  if (user.role === 'DOCTOR' || user.role === 'CLINIC_ADMIN') {
     await assertActiveMedicalAccessGrant({ user, memberId })
     return
   }
@@ -126,7 +130,7 @@ async function getVaccineForWrite(user: AuthUser, id: string) {
   if (FAMILY_WRITER_ROLES.includes(user.role)) {
     return getScopedOrThrow(user, id)
   }
-  if (user.role === 'DOCTOR') {
+  if (user.role === 'DOCTOR' || user.role === 'CLINIC_ADMIN') {
     const vaccine = await vaccinesRepository.findById(id)
     if (!vaccine) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Vacina não encontrada' })
