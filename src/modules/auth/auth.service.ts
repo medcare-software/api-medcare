@@ -16,6 +16,7 @@ import type {
 } from '../../shared/types/auth.types.js'
 import { parseDurationToMs } from '../../shared/utils/index.js'
 import { auditLogsRepository } from '../audit-logs/audit-logs.repository.js'
+import { resolveDoctorSessionLimitByUserId } from '../doctors/doctor-session-limit.js'
 import { familiesRepository } from '../families/families.repository.js'
 import { medicalAccessRepository } from '../medical-access/medical-access.repository.js'
 import { authRepository } from './auth.repository.js'
@@ -176,19 +177,20 @@ export const authService = {
     })
   },
 
-  // Limite de 2 sessões simultâneas só pra login de médico (clínica/família não
-  // são afetados). Em vez de bloquear o login, libera espaço revogando a sessão
-  // mais antiga — sessões ficam "presas" ativas no servidor sempre que o médico
-  // fecha a aba/navegador sem clicar em "Sair" (o browser não tem como avisar o
-  // backend nesse caso), então bloquear pra sempre exigiria intervenção manual
-  // toda vez que isso acontecesse.
+  // Limite de sessões simultâneas só pra login de médico (clínica/família não
+  // são afetados) — vem de `Plan.devicesPerDoctor`. Em vez de bloquear o login,
+  // libera espaço revogando as sessões mais antigas — sessões ficam "presas"
+  // ativas no servidor sempre que o médico fecha a aba/navegador sem clicar em
+  // "Sair" (o browser não tem como avisar o backend nesse caso).
   async enforceSessionCapacity(userId: string, role: Role) {
     if (role !== 'DOCTOR') return
-    const activeCount = await authRepository.countActiveRefreshTokens(userId)
-    if (activeCount < 2) return
-    const oldest = await authRepository.findOldestActiveRefreshToken(userId)
-    if (oldest) {
+    const limit = await resolveDoctorSessionLimitByUserId(userId)
+    let activeCount = await authRepository.countActiveRefreshTokens(userId)
+    while (activeCount >= limit) {
+      const oldest = await authRepository.findOldestActiveRefreshToken(userId)
+      if (!oldest) break
       await authRepository.revokeRefreshToken(oldest.jti)
+      activeCount -= 1
     }
   },
 

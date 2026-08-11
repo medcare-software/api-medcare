@@ -23,7 +23,22 @@ function isValidCalendarDate(v: string): boolean {
   )
 }
 
+// Date-only (`YYYY-MM-DD`) compara pelo calendário local — `new Date('YYYY-MM-DD')`
+// é meia-noite UTC e rejeitava "hoje" / aceitava "amanhã" conforme fuso.
 function isNotFuture(v: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(v)
+  if (match) {
+    const year = Number(match[1])
+    const month = Number(match[2])
+    const day = Number(match[3])
+    const now = new Date()
+    const todayYear = now.getFullYear()
+    const todayMonth = now.getMonth() + 1
+    const todayDay = now.getDate()
+    if (year !== todayYear) return year < todayYear
+    if (month !== todayMonth) return month < todayMonth
+    return day <= todayDay
+  }
   return new Date(v).getTime() <= Date.now()
 }
 

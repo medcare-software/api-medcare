@@ -1,5 +1,14 @@
 import { z } from 'zod'
 
+import { isValidCnpj, isValidCpf, onlyDigits } from '../../shared/security/index.js'
+
+function isValidCpfOrCnpj(value: string): boolean {
+  const digits = onlyDigits(value)
+  if (digits.length === 11) return isValidCpf(digits)
+  if (digits.length === 14) return isValidCnpj(digits)
+  return false
+}
+
 const SupplierCategoryEnum = z.enum([
   'INFRASTRUCTURE',
   'SERVICES',
@@ -55,7 +64,9 @@ const RecurrenceConfigSchema = z.object({
 
 export const CreateSupplierSchema = z.object({
   name: z.string().min(1),
-  document: z.string().min(11),
+  document: z.string().refine((value) => isValidCpfOrCnpj(value), {
+    message: 'CPF ou CNPJ inválido',
+  }),
   email: z.string().email(),
   phone: z.string().min(8),
   category: SupplierCategoryEnum,
@@ -63,7 +74,10 @@ export const CreateSupplierSchema = z.object({
 
 export const UpdateSupplierSchema = z.object({
   name: z.string().min(1).optional(),
-  document: z.string().min(11).optional(),
+  document: z
+    .string()
+    .refine((value) => isValidCpfOrCnpj(value), { message: 'CPF ou CNPJ inválido' })
+    .optional(),
   email: z.string().email().optional(),
   phone: z.string().min(8).optional(),
   category: SupplierCategoryEnum.optional(),

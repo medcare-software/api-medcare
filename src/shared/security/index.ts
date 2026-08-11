@@ -1,5 +1,7 @@
 export { recordAuditEvent, recordSensitiveAccess } from './audit.js'
 export { hashForLookup, onlyDigits } from './blind-index.js'
+export { isValidCnpj } from './cnpj.js'
+export { isValidCpf } from './cpf.js'
 export { decryptField, encryptField } from './field-encryption.js'
 export { maskCnpj, maskCpf, maskEmail, maskPhone } from './mask.js'
 export {

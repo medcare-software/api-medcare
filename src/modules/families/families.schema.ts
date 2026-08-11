@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isValidCpf } from '../../shared/security/index.js'
 import { optionalDate, requiredDate } from '../../shared/utils/zod-date.js'
 
 const BiologicalSexEnum = z.enum(['MALE', 'FEMALE'])
@@ -12,7 +13,7 @@ export const RegisterSchema = z.object({
   phone: z.string().min(8, { message: 'Telefone inválido' }).optional(),
   state: z.string().length(2).optional(),
   city: z.string().optional(),
-  cpf: z.string().min(11, 'CPF inválido'),
+  cpf: z.string().refine((value) => isValidCpf(value), { message: 'CPF inválido' }),
   fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
   displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
   birthDate: optionalDate('Data de nascimento inválida', {
@@ -59,7 +60,7 @@ const CreateFamilyMemberFields = z.object({
     futureMessage: 'Data de nascimento não pode ser no futuro',
   }),
   biologicalSex: BiologicalSexEnum.optional(),
-  cpf: z.string().min(11, { message: 'CPF inválido' }),
+  cpf: z.string().refine((value) => isValidCpf(value), { message: 'CPF inválido' }),
   // Membro sempre ganha login próprio (User FAMILY_MEMBER) + e-mail de ativação.
   email: z.string().email({ message: 'E-mail inválido' }),
 })

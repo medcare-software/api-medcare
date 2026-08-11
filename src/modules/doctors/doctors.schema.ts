@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { onlyDigits } from '../../shared/security/index.js'
+import { isValidCpf } from '../../shared/security/index.js'
 
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
 const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
@@ -20,9 +20,9 @@ export const CreateDoctorSchema = z.object({
   email: z.string().email({ message: 'E-mail inválido' }),
   // password removido — a senha temporária é gerada no servidor e enviada por e-mail
   phone: z.string().min(8).optional(),
-  // Aceita com ou sem máscara — só o total de dígitos importa (ver frontend, que envia formatado).
-  cpf: z.string().refine((value) => onlyDigits(value).length === 11, {
-    message: 'CPF deve conter 11 dígitos',
+  // Aceita com ou sem máscara — valida dígitos verificadores (módulo 11).
+  cpf: z.string().refine((value) => isValidCpf(value), {
+    message: 'CPF inválido',
   }),
   crmNumber: z.string().regex(/^\d{6}$/, 'CRM deve conter 6 dígitos'),
   crmState: z.string().length(2),

@@ -26,6 +26,7 @@ import { plansService } from '../plans/plans.service.js'
 function doctorPortalLoginUrl() {
   return env.DOCTOR_ACTIVATION_LINK_BASE_URL.replace(/\/reset-password\/?$/i, '/') || 'https://www.medcaresw.com/'
 }
+import { resolveDoctorSessionLimitByDoctorId } from './doctor-session-limit.js'
 import { doctorsRepository } from './doctors.repository.js'
 import type {
   CreateDoctorInput,
@@ -316,12 +317,18 @@ export const doctorsService = {
 
   async listSessions(user: AuthUser, id: string) {
     const doctor = await resolveScopedDoctor(user, id)
-    const sessions = await doctorsRepository.findActiveSessionsByUserId(doctor.userId)
-    return sessions.map((session) => ({
-      id: session.id,
-      deviceLabel: session.deviceLabel ?? 'Dispositivo desconhecido',
-      createdAt: session.createdAt,
-    }))
+    const [sessions, sessionLimit] = await Promise.all([
+      doctorsRepository.findActiveSessionsByUserId(doctor.userId),
+      resolveDoctorSessionLimitByDoctorId(doctor.id),
+    ])
+    return {
+      sessionLimit,
+      sessions: sessions.map((session) => ({
+        id: session.id,
+        deviceLabel: session.deviceLabel ?? 'Dispositivo desconhecido',
+        createdAt: session.createdAt,
+      })),
+    }
   },
 
   async revokeSession(user: AuthUser, id: string, sessionId: string) {

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { isValidCnpj } from '../../shared/security/index.js'
+
 const StatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'PENDING'])
 const PaymentMethodEnum = z.enum(['PIX', 'BOLETO', 'CREDIT_CARD', 'TRANSFER'])
 const InstitutionTypeEnum = z.enum(['CLINICA', 'CONSULTORIO', 'HOSPITAL', 'LABORATORIO'])
@@ -17,7 +19,7 @@ const AddressSchema = z.object({
 export const CreateClinicSchema = z.object({
   legalName: z.string().min(1),
   tradeName: z.string().min(1),
-  cnpj: z.string().min(14),
+  cnpj: z.string().refine((value) => isValidCnpj(value), { message: 'CNPJ inválido' }),
   email: z.string().email().optional(),
   phone: z.string().min(8),
   address: AddressSchema,
@@ -39,7 +41,10 @@ export const CreateClinicSchema = z.object({
 export const UpdateClinicSchema = z.object({
   legalName: z.string().min(1).optional(),
   tradeName: z.string().min(1).optional(),
-  cnpj: z.string().min(14).optional(),
+  cnpj: z
+    .string()
+    .refine((value) => isValidCnpj(value), { message: 'CNPJ inválido' })
+    .optional(),
   email: z.string().email().optional(),
   phone: z.string().min(8).optional(),
   address: AddressSchema.optional(),
