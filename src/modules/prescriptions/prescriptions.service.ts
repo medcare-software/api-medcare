@@ -2,7 +2,7 @@ import type { MedicationForm, MedicationStripeColor } from '@prisma/client'
 import {
   assertClinicalReadAccess,
   assertClinicalWriteAccess,
-  resolveDoctorId,
+  resolveClinicalAuthorDoctorId,
 } from '../../shared/access/index.js'
 import { checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
 import { getMedicationRiskContext } from '../../shared/ai/medication-risk.helpers.js'
@@ -74,8 +74,8 @@ export const prescriptionsService = {
 
   async create(user: AuthUser, input: CreatePrescriptionInput) {
     await assertClinicalWriteAccess(user, input.memberId)
-    // doctorId nunca vem do client — deriva sempre do token, para impedir spoofing.
-    const doctorId = await resolveDoctorId(user.id)
+    // doctorId nunca vem do client — DOCTOR = próprio perfil; CLINIC_ADMIN = médico do grant.
+    const doctorId = await resolveClinicalAuthorDoctorId(user, input.memberId)
     const { prescription, medications } = await prescriptionsRepository.create({
       memberId: input.memberId,
       doctorId,
@@ -173,14 +173,14 @@ export const prescriptionsService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Receituário não encontrado' })
     }
 
-    const doctorId = await resolveDoctorId(user.id)
+    await assertClinicalWriteAccess(user, prescription.memberId)
+    const doctorId = await resolveClinicalAuthorDoctorId(user, prescription.memberId)
     if (prescription.doctorId !== doctorId) {
       throw new AppError({
         code: 'FORBIDDEN',
         message: 'Apenas o médico autor pode editar este receituário',
       })
     }
-    await assertClinicalWriteAccess(user, prescription.memberId)
 
     const updated = await prescriptionsRepository.update(id, {
       ...(input.issueDate !== undefined && { issueDate: input.issueDate }),
@@ -202,14 +202,14 @@ export const prescriptionsService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Receituário não encontrado' })
     }
 
-    const doctorId = await resolveDoctorId(user.id)
+    await assertClinicalWriteAccess(user, prescription.memberId)
+    const doctorId = await resolveClinicalAuthorDoctorId(user, prescription.memberId)
     if (prescription.doctorId !== doctorId) {
       throw new AppError({
         code: 'FORBIDDEN',
         message: 'Apenas o médico autor pode excluir este receituário',
       })
     }
-    await assertClinicalWriteAccess(user, prescription.memberId)
     await prescriptionsRepository.delete(id)
   },
 }

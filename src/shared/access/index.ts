@@ -14,6 +14,7 @@ export {
   resolveAccessibleMemberIds,
   resolveCaregiverFamilyIds,
   resolveClinicId,
+  resolveClinicalAuthorDoctorId,
   resolveDoctorId,
   resolveOwnMemberId,
   resolveOwnScopedMemberIds,

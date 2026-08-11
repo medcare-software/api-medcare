@@ -9,6 +9,8 @@ import {
 } from './prescriptions.schema.js'
 import { prescriptionsService } from './prescriptions.service.js'
 
+const CLINICAL_WRITERS = ['DOCTOR', 'CLINIC_ADMIN'] as const
+
 export default async function prescriptionsRoutes(fastify: FastifyInstance) {
   // GET /prescriptions?memberId=
   fastify.get('/prescriptions', { preHandler: [authenticate] }, async (req, reply) => {
@@ -31,10 +33,10 @@ export default async function prescriptionsRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({ data: prescription })
   })
 
-  // POST /prescriptions — só DOCTOR, com grant ativo
+  // POST /prescriptions — DOCTOR ou CLINIC_ADMIN com grant ativo
   fastify.post(
     '/prescriptions',
-    { preHandler: [authenticate, authorize('DOCTOR')] },
+    { preHandler: [authenticate, authorize(...CLINICAL_WRITERS)] },
     async (req, reply) => {
       const body = CreatePrescriptionSchema.safeParse(req.body)
       if (!body.success) {
@@ -53,7 +55,7 @@ export default async function prescriptionsRoutes(fastify: FastifyInstance) {
   // mostra aviso de interação/alergia e pede confirmação do médico antes de criar.
   fastify.post(
     '/prescriptions/check-risk',
-    { preHandler: [authenticate, authorize('DOCTOR')] },
+    { preHandler: [authenticate, authorize(...CLINICAL_WRITERS)] },
     async (req, reply) => {
       const body = CheckPrescriptionRiskSchema.safeParse(req.body)
       if (!body.success) {
@@ -68,10 +70,10 @@ export default async function prescriptionsRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // PATCH /prescriptions/:id — só o médico autor
+  // PATCH /prescriptions/:id — autor (médico do token ou do grant da clínica)
   fastify.patch(
     '/prescriptions/:id',
-    { preHandler: [authenticate, authorize('DOCTOR')] },
+    { preHandler: [authenticate, authorize(...CLINICAL_WRITERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const body = UpdatePrescriptionSchema.safeParse(req.body)
@@ -87,10 +89,10 @@ export default async function prescriptionsRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // DELETE /prescriptions/:id — só o médico autor
+  // DELETE /prescriptions/:id — autor (médico do token ou do grant da clínica)
   fastify.delete(
     '/prescriptions/:id',
-    { preHandler: [authenticate, authorize('DOCTOR')] },
+    { preHandler: [authenticate, authorize(...CLINICAL_WRITERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       await prescriptionsService.remove(req.user, id)

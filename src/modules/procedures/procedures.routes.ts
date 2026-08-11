@@ -8,6 +8,8 @@ import {
 } from './procedures.schema.js'
 import { proceduresService } from './procedures.service.js'
 
+const CLINICAL_WRITERS = ['DOCTOR', 'CLINIC_ADMIN'] as const
+
 export default async function proceduresRoutes(fastify: FastifyInstance) {
   // GET /procedures?memberId=
   fastify.get('/procedures', { preHandler: [authenticate] }, async (req, reply) => {
@@ -30,10 +32,10 @@ export default async function proceduresRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({ data: procedure })
   })
 
-  // POST /procedures — só DOCTOR, com grant ativo
+  // POST /procedures — DOCTOR ou CLINIC_ADMIN com grant ativo
   fastify.post(
     '/procedures',
-    { preHandler: [authenticate, authorize('DOCTOR')] },
+    { preHandler: [authenticate, authorize(...CLINICAL_WRITERS)] },
     async (req, reply) => {
       const body = CreateProcedureSchema.safeParse(req.body)
       if (!body.success) {
@@ -48,10 +50,10 @@ export default async function proceduresRoutes(fastify: FastifyInstance) {
     },
   )
 
-  // PATCH /procedures/:id — só o médico autor, inclui transições de status
+  // PATCH /procedures/:id — autor (médico do token ou do grant da clínica)
   fastify.patch(
     '/procedures/:id',
-    { preHandler: [authenticate, authorize('DOCTOR')] },
+    { preHandler: [authenticate, authorize(...CLINICAL_WRITERS)] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const body = UpdateProcedureSchema.safeParse(req.body)

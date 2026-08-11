@@ -1,7 +1,7 @@
 import {
   assertClinicalReadAccess,
   assertClinicalWriteAccess,
-  resolveDoctorId,
+  resolveClinicalAuthorDoctorId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
@@ -38,7 +38,7 @@ export const proceduresService = {
 
   async create(user: AuthUser, input: CreateProcedureInput) {
     await assertClinicalWriteAccess(user, input.memberId)
-    const doctorId = await resolveDoctorId(user.id)
+    const doctorId = await resolveClinicalAuthorDoctorId(user, input.memberId)
     const procedure = await proceduresRepository.create({
       memberId: input.memberId,
       doctorId,
@@ -74,14 +74,14 @@ export const proceduresService = {
 
     // Mesma restrição de diagnostics: só o médico autor edita, mesmo que outro
     // médico tenha um grant ativo para o paciente.
-    const doctorId = await resolveDoctorId(user.id)
+    await assertClinicalWriteAccess(user, procedure.memberId)
+    const doctorId = await resolveClinicalAuthorDoctorId(user, procedure.memberId)
     if (procedure.doctorId !== doctorId) {
       throw new AppError({
         code: 'FORBIDDEN',
         message: 'Apenas o médico autor pode editar este procedimento',
       })
     }
-    await assertClinicalWriteAccess(user, procedure.memberId)
 
     // Motivo obrigatório só ao cancelar ou reabrir (COMPLETED -> IN_PROGRESS) —
     // depende do status ATUAL no banco (procedure.status), por isso não dá pra

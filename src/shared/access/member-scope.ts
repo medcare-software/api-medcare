@@ -172,23 +172,23 @@ export async function resolveClinicId(userId: string): Promise<string> {
 export async function assertActiveMedicalAccessGrant(params: {
   user: AuthUser
   memberId: string
-}): Promise<{ grantId: string }> {
+}): Promise<{ grantId: string; doctorId: string | null }> {
   const { user, memberId } = params
   const expiryFilter = { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }
 
-  let grant: { id: string } | null = null
+  let grant: { id: string; doctorId: string | null } | null = null
 
   if (user.role === 'DOCTOR') {
     const doctorId = await resolveDoctorId(user.id)
     grant = await db.medicalAccessGrant.findFirst({
       where: { memberId, doctorId, status: 'ACTIVE', ...expiryFilter },
-      select: { id: true },
+      select: { id: true, doctorId: true },
     })
   } else if (user.role === 'CLINIC_ADMIN') {
     const clinicId = await resolveClinicId(user.id)
     grant = await db.medicalAccessGrant.findFirst({
       where: { memberId, clinicId, status: 'ACTIVE', ...expiryFilter },
-      select: { id: true },
+      select: { id: true, doctorId: true },
     })
   } else {
     throw new AppError({
@@ -211,5 +211,33 @@ export async function assertActiveMedicalAccessGrant(params: {
     data: { lastAccessedAt: new Date() },
   })
 
-  return { grantId: grant.id }
+  return { grantId: grant.id, doctorId: grant.doctorId }
+}
+
+/**
+ * Médico autor do registro clínico: DOCTOR = próprio perfil; CLINIC_ADMIN = médico
+ * vinculado ao grant ativo do paciente (selecionado no resgate do código).
+ */
+export async function resolveClinicalAuthorDoctorId(
+  user: AuthUser,
+  memberId: string,
+): Promise<string> {
+  if (user.role === 'DOCTOR') {
+    return resolveDoctorId(user.id)
+  }
+  if (user.role === 'CLINIC_ADMIN') {
+    const { doctorId } = await assertActiveMedicalAccessGrant({ user, memberId })
+    if (!doctorId) {
+      throw new AppError({
+        code: 'FORBIDDEN',
+        message:
+          'Selecione o médico responsável no acesso ao paciente antes de registrar este dado',
+      })
+    }
+    return doctorId
+  }
+  throw new AppError({
+    code: 'FORBIDDEN',
+    message: 'Apenas médicos ou clínicas com acesso podem registrar este dado clínico',
+  })
 }

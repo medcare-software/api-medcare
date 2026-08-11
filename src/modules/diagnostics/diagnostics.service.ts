@@ -1,7 +1,7 @@
 import {
   assertClinicalReadAccess,
   assertClinicalWriteAccess,
-  resolveDoctorId,
+  resolveClinicalAuthorDoctorId,
 } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
@@ -38,8 +38,8 @@ export const diagnosticsService = {
 
   async create(user: AuthUser, input: CreateDiagnosticInput) {
     await assertClinicalWriteAccess(user, input.memberId)
-    // doctorId nunca vem do client — deriva sempre do token, para impedir spoofing.
-    const doctorId = await resolveDoctorId(user.id)
+    // doctorId nunca vem do client — DOCTOR = próprio perfil; CLINIC_ADMIN = médico do grant.
+    const doctorId = await resolveClinicalAuthorDoctorId(user, input.memberId)
     const diagnostic = await diagnosticsRepository.create({
       memberId: input.memberId,
       doctorId,
@@ -68,14 +68,14 @@ export const diagnosticsService = {
       throw new AppError({ code: 'NOT_FOUND', message: 'Diagnóstico não encontrado' })
     }
 
-    const doctorId = await resolveDoctorId(user.id)
+    await assertClinicalWriteAccess(user, diagnostic.memberId)
+    const doctorId = await resolveClinicalAuthorDoctorId(user, diagnostic.memberId)
     if (diagnostic.doctorId !== doctorId) {
       throw new AppError({
         code: 'FORBIDDEN',
         message: 'Apenas o médico autor pode editar este diagnóstico',
       })
     }
-    await assertClinicalWriteAccess(user, diagnostic.memberId)
 
     const updated = await diagnosticsRepository.update(id, {
       ...(input.title !== undefined && { title: input.title }),

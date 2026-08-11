@@ -31,12 +31,12 @@ export async function assertClinicalReadAccess(
   })
 }
 
-/** Gate de escrita para dados clínicos só registráveis por médico (diagnostics/procedures). */
+/** Gate de escrita para dados clínicos só registráveis por médico/clínica (diagnostics/procedures/prescriptions). */
 export async function assertClinicalWriteAccess(user: AuthUser, memberId: string): Promise<void> {
-  if (user.role !== 'DOCTOR') {
+  if (user.role !== 'DOCTOR' && user.role !== 'CLINIC_ADMIN') {
     throw new AppError({
       code: 'FORBIDDEN',
-      message: 'Apenas médicos podem registrar este dado clínico',
+      message: 'Apenas médicos ou clínicas com acesso podem registrar este dado clínico',
     })
   }
   await assertActiveMedicalAccessGrant({ user, memberId })
