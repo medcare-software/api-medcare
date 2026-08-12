@@ -123,10 +123,35 @@ export const authRepository = {
     return db.passwordResetToken.create({ data })
   },
 
+  // Garante um único código aberto por usuário — "Reenviar" invalida o anterior.
+  async invalidateOpenPasswordResetTokens(userId: string) {
+    await db.passwordResetToken.updateMany({
+      where: { userId, consumedAt: null },
+      data: { consumedAt: new Date() },
+    })
+  },
+
   async findActivePasswordResetToken(userId: string) {
     return db.passwordResetToken.findFirst({
       where: { userId, consumedAt: null },
       orderBy: { createdAt: 'desc' },
+    })
+  },
+
+  // Idempotência: se o verify já consumiu o código mas a resposta se perdeu no app,
+  // um retry com o mesmo código ainda libera uma sessão curta.
+  async findRecentlyConsumedPasswordResetToken(
+    userId: string,
+    codeHash: string,
+    consumedAfter: Date,
+  ) {
+    return db.passwordResetToken.findFirst({
+      where: {
+        userId,
+        codeHash,
+        consumedAt: { not: null, gte: consumedAfter },
+      },
+      orderBy: { consumedAt: 'desc' },
     })
   },
 

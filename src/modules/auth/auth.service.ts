@@ -281,6 +281,9 @@ export const authService = {
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
     const codeHash = hashForLookup(code)
     const expiresAt = new Date(Date.now() + env.PASSWORD_RESET_CODE_TTL_MINUTES * 60_000)
+    // Só o código mais recente vale — evita "código inválido" ao usar e-mail antigo
+    // depois de tocar em Reenviar.
+    await authRepository.invalidateOpenPasswordResetTokens(user.id)
     await authRepository.createPasswordResetToken({ userId: user.id, codeHash, expiresAt })
 
     const template = passwordResetCodeTemplate(code, env.PASSWORD_RESET_CODE_TTL_MINUTES)
@@ -292,25 +295,38 @@ export const authService = {
     email: string,
     code: string,
   ): Promise<{ resetSessionToken: string }> {
+    const normalizedCode = onlyDigits(code)
     const user = await authRepository.findUserByEmail(email)
-    if (!user) {
+    if (!user || normalizedCode.length !== 6) {
       throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
     }
 
+    const codeHash = hashForLookup(normalizedCode)
     const token = await authRepository.findActivePasswordResetToken(user.id)
-    if (!token) {
-      throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
-    }
-    if (token.expiresAt < new Date() || token.attempts >= MAX_RESET_CODE_ATTEMPTS) {
-      throw new AppError({ code: 'ACCESS_CODE_EXPIRED', message: 'Código expirado' })
-    }
 
-    if (token.codeHash !== hashForLookup(code)) {
-      await authRepository.incrementPasswordResetAttempts(token.id)
-      throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
-    }
+    if (token) {
+      if (token.expiresAt < new Date() || token.attempts >= MAX_RESET_CODE_ATTEMPTS) {
+        throw new AppError({ code: 'ACCESS_CODE_EXPIRED', message: 'Código expirado' })
+      }
 
-    await authRepository.consumePasswordResetToken(token.id)
+      if (token.codeHash !== codeHash) {
+        await authRepository.incrementPasswordResetAttempts(token.id)
+        throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
+      }
+
+      await authRepository.consumePasswordResetToken(token.id)
+    } else {
+      // Sem token aberto: pode ser retry depois que o verify já consumiu o código
+      // (app perdeu o 200). Reemite sessão se o consumo foi recente.
+      const recentlyConsumed = await authRepository.findRecentlyConsumedPasswordResetToken(
+        user.id,
+        codeHash,
+        new Date(Date.now() - 2 * 60_000),
+      )
+      if (!recentlyConsumed) {
+        throw new AppError({ code: 'ACCESS_CODE_INVALID', message: 'Código inválido' })
+      }
+    }
 
     const resetSessionToken = issuePasswordResetSessionToken(
       fastify,
