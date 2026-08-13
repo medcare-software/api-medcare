@@ -1,3 +1,4 @@
+export { assertAiEnabled, isAiEnabled } from './ai-access.js'
 export { assertClinicalReadAccess, assertClinicalWriteAccess } from './clinical-access.js'
 export {
   assertClinicalProfileComplete,

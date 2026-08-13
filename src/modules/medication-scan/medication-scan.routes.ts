@@ -16,7 +16,7 @@ export default async function medicationScanRoutes(fastify: FastifyInstance) {
         details: body.error.issues,
       })
     }
-    const result = await medicationScanService.scan(body.data.fileId)
+    const result = await medicationScanService.scan(req.user.id, body.data.fileId)
     req.log.info(
       {
         fileId: body.data.fileId,

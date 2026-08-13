@@ -10,7 +10,7 @@ export default async function gmailIntegrationRoutes(fastify: FastifyInstance) {
     '/integrations/gmail/connect/start',
     { preHandler: [authenticate, authorize('PATIENT_ADMIN', 'FAMILY_MEMBER')] },
     async (req, reply) => {
-      const result = gmailIntegrationService.startConnect(fastify, req.user)
+      const result = await gmailIntegrationService.startConnect(fastify, req.user)
       return reply.status(200).send({ data: result })
     },
   )

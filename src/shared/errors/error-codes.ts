@@ -39,6 +39,8 @@ export const ErrorCode = {
 
   // ── IA de visão ───────────────────────────────────────
   AI_EXTRACTION_FAILED: 'AI_EXTRACTION_FAILED',
+  /** Conta sem entitlement de IA (toggle no admin). */
+  AI_DISABLED: 'AI_DISABLED',
 
   // ── Integração Gmail ──────────────────────────────────
   GMAIL_OAUTH_STATE_INVALID: 'GMAIL_OAUTH_STATE_INVALID',

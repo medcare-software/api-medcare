@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
-import { ListUsersQuerySchema } from './users.schema.js'
+import { ListUsersQuerySchema, UpdateUserAiEnabledSchema } from './users.schema.js'
 import { usersService } from './users.service.js'
 
 export default async function usersRoutes(fastify: FastifyInstance) {
@@ -55,6 +55,25 @@ export default async function usersRoutes(fastify: FastifyInstance) {
       const { id } = req.params as { id: string }
       const familyMember = await usersService.getFamilyMemberById(req.user, id)
       return reply.status(200).send({ data: familyMember })
+    },
+  )
+
+  // PATCH /users/:id/ai-enabled — libera/bloqueia consumo de IA no app
+  fastify.patch(
+    '/users/:id/ai-enabled',
+    { preHandler: [authenticate, authorize('PLATFORM_ADMIN')] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const body = UpdateUserAiEnabledSchema.safeParse(req.body)
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: body.error.issues,
+        })
+      }
+      const user = await usersService.setAiEnabled(req.user, id, body.data.aiEnabled)
+      return reply.status(200).send({ data: user })
     },
   )
 

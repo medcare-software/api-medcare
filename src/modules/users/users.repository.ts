@@ -96,6 +96,10 @@ export const usersRepository = {
     return db.user.update({ where: { id: userId }, data: { passwordHash } })
   },
 
+  updateAiEnabled(userId: string, aiEnabled: boolean) {
+    return db.user.update({ where: { id: userId }, data: { aiEnabled } })
+  },
+
   // KPIs do topo da tela — baseados em FamilyMember (pessoas gerenciadas no
   // app), não em User, porque um membro sem login próprio (ex.: filho menor)
   // ainda conta como pessoa cadastrada.

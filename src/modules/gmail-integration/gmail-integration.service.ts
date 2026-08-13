@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import { env } from '../../config/env.js'
+import { assertAiEnabled } from '../../shared/access/index.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
   buildAuthUrl,
@@ -46,7 +47,8 @@ async function startWatchIfConfigured(
 }
 
 export const gmailIntegrationService = {
-  startConnect(fastify: FastifyInstance, user: AuthUser): { authUrl: string } {
+  async startConnect(fastify: FastifyInstance, user: AuthUser): Promise<{ authUrl: string }> {
+    await assertAiEnabled(user.id)
     const payload: Omit<GmailOAuthStatePayload, 'iat' | 'exp'> = {
       sub: user.id,
       purpose: 'gmail_oauth_state',

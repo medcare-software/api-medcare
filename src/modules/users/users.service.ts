@@ -55,6 +55,7 @@ function toUserSummary(user: Awaited<ReturnType<typeof usersRepository.findMany>
     state: user.state,
     role: user.role,
     status: user.status,
+    aiEnabled: user.aiEnabled,
     isFamilyAdmin: user.familyMember?.isAdmin ?? false,
     birthDate: user.familyMember?.birthDate ?? null,
     createdAt: user.createdAt,
@@ -191,6 +192,7 @@ export const usersService = {
       state: familyMember.user?.state ?? null,
       role: familyMember.isAdmin ? 'PATIENT_ADMIN' : 'FAMILY_MEMBER',
       status: familyMember.user?.status ?? 'ACTIVE',
+      aiEnabled: familyMember.user?.aiEnabled ?? false,
       isFamilyAdmin: familyMember.isAdmin,
       birthDate: familyMember.birthDate,
       createdAt: familyMember.createdAt,
@@ -207,6 +209,24 @@ export const usersService = {
         : null,
       medications: medications.map(toMedicationSummary),
     }
+  },
+
+  async setAiEnabled(actor: AuthUser, id: string, aiEnabled: boolean) {
+    const user = await usersRepository.findById(id)
+    if (!user) {
+      throw new AppError({ code: 'NOT_FOUND', message: 'Usuário não encontrado' })
+    }
+
+    await usersRepository.updateAiEnabled(user.id, aiEnabled)
+    await recordAuditEvent({
+      actorId: actor.id,
+      action: aiEnabled ? 'ENABLE_USER_AI' : 'DISABLE_USER_AI',
+      targetType: 'User',
+      targetId: user.id,
+      metadata: { aiEnabled },
+    })
+
+    return this.getById(actor, id)
   },
 
   async forceResetPassword(actor: AuthUser, id: string) {

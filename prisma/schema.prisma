@@ -163,6 +163,8 @@ model User {
   cpfHash      String?    @unique // blind index (HMAC) para busca sem decriptar
   status       UserStatus @default(ACTIVE)
   mfaEnabled   Boolean    @default(false)
+  /// Consumo de IA no app (risco, scan de embalagem, Gmail). Off = cobrança avulsa via suporte.
+  aiEnabled    Boolean    @default(false)
   lastLoginAt  DateTime?
   // Aceite dos termos profissionais (médico / admin de clínica) — 1º login no portal
   professionalCommitmentAcceptedAt    DateTime?

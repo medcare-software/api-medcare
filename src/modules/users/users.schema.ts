@@ -21,3 +21,9 @@ export const ListUsersQuerySchema = z.object({
 })
 
 export type ListUsersQuery = z.infer<typeof ListUsersQuerySchema>
+
+export const UpdateUserAiEnabledSchema = z.object({
+  aiEnabled: z.boolean(),
+})
+
+export type UpdateUserAiEnabledInput = z.infer<typeof UpdateUserAiEnabledSchema>

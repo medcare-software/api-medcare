@@ -1,3 +1,4 @@
+import { assertAiEnabled } from '../../shared/access/index.js'
 import {
   type MedicationScanResult,
   extractMedicationFromImage,
@@ -52,7 +53,8 @@ function resolveMediaType(contentType: string | undefined): SupportedMediaType {
 }
 
 export const medicationScanService = {
-  async scan(fileId: string): Promise<MedicationScanResult> {
+  async scan(userId: string, fileId: string): Promise<MedicationScanResult> {
+    await assertAiEnabled(userId)
     const startedAt = Date.now()
     console.info(`[medication-scan] Início fileId=${fileId}`)
 

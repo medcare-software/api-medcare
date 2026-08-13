@@ -1,4 +1,8 @@
-import { assertClinicalProfileComplete, assertOwnScopedMemberInScope } from '../../shared/access/index.js'
+import {
+  assertAiEnabled,
+  assertClinicalProfileComplete,
+  assertOwnScopedMemberInScope,
+} from '../../shared/access/index.js'
 import { checkMedicationRisk } from '../../shared/ai/medication-risk.client.js'
 import { getMedicationRiskContext } from '../../shared/ai/medication-risk.helpers.js'
 import {
@@ -30,6 +34,7 @@ export const medicationRiskCheckService = {
     input: CheckMedicationRiskInput,
   ): Promise<MedicationRiskCheckResponse> {
     await assertOwnScopedMemberInScope(user, input.memberId)
+    await assertAiEnabled(user.id)
     // Mesma trava do POST /medications — senão o app passa na checagem e só
     // falha no create com 403 (mensagem genérica / “sem internet” no build antigo).
     await assertClinicalProfileComplete(input.memberId)

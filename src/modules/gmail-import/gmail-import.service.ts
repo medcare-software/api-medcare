@@ -1,7 +1,7 @@
 import type { ExamType, GmailImportedExam, GmailIntegration, LabEmail } from '@prisma/client'
 
 import { env } from '../../config/env.js'
-import { assertOwnScopedMemberInScope } from '../../shared/access/index.js'
+import { assertOwnScopedMemberInScope, isAiEnabled } from '../../shared/access/index.js'
 import { extractExamFromEmail } from '../../shared/ai/gmail-exam.client.js'
 import { AppError } from '../../shared/errors/index.js'
 import {
@@ -160,6 +160,22 @@ async function processMessage(
 
   const message = await getMessage(accessToken, messageId)
   const internalDate = new Date(Number(message.internalDate))
+
+  // Conta sem IA: não gasta token — marca a mensagem pra não reprocessar.
+  if (!(await isAiEnabled(integration.userId))) {
+    await gmailImportRepository.createImportedExam({
+      gmailIntegrationId: integration.id,
+      gmailMessageId: messageId,
+      extractedSummary: {
+        isLabResult: false,
+        subject: message.subject,
+        labName: lab.name,
+        skipReason: 'ai_disabled_on_account',
+      },
+      status: 'IGNORED',
+    })
+    return internalDate
+  }
 
   await recordSensitiveAccess({
     actorId: integration.userId,

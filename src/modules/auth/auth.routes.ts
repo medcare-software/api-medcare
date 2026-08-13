@@ -140,6 +140,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         city: user.city,
         cpf: user.cpfEncrypted ? decryptField(user.cpfEncrypted) : null,
         status: user.status,
+        aiEnabled: user.aiEnabled,
         professionalTermsAccepted: hasAcceptedProfessionalTerms(user),
         professionalTermsVersion: user.professionalTermsVersion,
         consumerTermsAccepted: hasAcceptedConsumerTerms(user),
