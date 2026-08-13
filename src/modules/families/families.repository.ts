@@ -36,11 +36,8 @@ type CreateFamilyMemberData = {
   cpfHash?: string
 }
 
-// CPF sempre presente aqui — o schema (CreateFamilyMemberSchema) exige
-// email + cpf no create com login.
-type CreateFamilyMemberWithUserData = Omit<CreateFamilyMemberData, 'cpfEncrypted' | 'cpfHash'> & {
-  cpfEncrypted: Buffer<ArrayBuffer>
-  cpfHash: string
+// E-mail sempre presente (login). CPF pode faltar no cadastro do membro.
+type CreateFamilyMemberWithUserData = CreateFamilyMemberData & {
   email: string
   passwordHash: string
 }
@@ -228,15 +225,15 @@ export const familiesRepository = {
   createMemberWithUser(familyId: string, input: CreateFamilyMemberWithUserData) {
     return db.$transaction(async (tx) => {
       const user = await tx.user.create({
-        data: {
+        data: omitUndefined({
           name: input.displayName,
           email: input.email.toLowerCase(),
           passwordHash: input.passwordHash,
-          role: 'FAMILY_MEMBER',
+          role: 'FAMILY_MEMBER' as const,
           cpfEncrypted: input.cpfEncrypted,
           cpfHash: input.cpfHash,
-          status: 'ACTIVE',
-        },
+          status: 'ACTIVE' as const,
+        }),
       })
 
       const member = await tx.familyMember.create({

@@ -43,14 +43,20 @@ export const CompleteOwnProfileSchema = z.object({
   biologicalSex: BiologicalSexEnum,
   weightKg: z.number().positive({ message: 'Peso deve ser um número positivo' }),
   heightM: z.number().positive({ message: 'Altura deve ser um número positivo' }),
-  bloodType: z.string().min(1, { message: 'Tipo sanguíneo é obrigatório' }),
+  bloodType: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim()
+      return trimmed ? trimmed : undefined
+    }),
   conditions: z.array(z.string()).default([]),
   allergies: z.array(z.string()).default([]),
   notes: z.string().min(1, { message: 'Observação não pode ser vazia' }).optional(),
 })
 
 // Sem o .superRefine — base compartilhada com UpdateFamilyMemberSchema.
-// Create exige email + CPF (login sempre criado). Update permanece parcial.
+// Create exige e-mail (login). CPF é opcional — se informado, deve ser válido.
 const CreateFamilyMemberFields = z.object({
   fullName: z.string().min(1, { message: 'Nome completo é obrigatório' }),
   displayName: z.string().min(1, { message: 'Nome de exibição é obrigatório' }),
@@ -60,7 +66,16 @@ const CreateFamilyMemberFields = z.object({
     futureMessage: 'Data de nascimento não pode ser no futuro',
   }),
   biologicalSex: BiologicalSexEnum.optional(),
-  cpf: z.string().refine((value) => isValidCpf(value), { message: 'CPF inválido' }),
+  cpf: z
+    .string()
+    .optional()
+    .refine((value) => value == null || value.trim() === '' || isValidCpf(value), {
+      message: 'CPF inválido',
+    })
+    .transform((value) => {
+      if (value == null || value.trim() === '') return undefined
+      return value
+    }),
   // Membro sempre ganha login próprio (User FAMILY_MEMBER) + e-mail de ativação.
   email: z.string().email({ message: 'E-mail inválido' }),
 })

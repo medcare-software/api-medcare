@@ -277,7 +277,7 @@ export const familiesService = {
     const profile = await familiesRepository.upsertHealthProfile(ownId, {
       weightKg: input.weightKg,
       heightM: input.heightM,
-      bloodType: input.bloodType,
+      ...(input.bloodType !== undefined && { bloodType: input.bloodType }),
       conditions: input.conditions,
       allergies: input.allergies,
       ...(input.notes !== undefined && { notesEncrypted: encryptField(input.notes) }),
@@ -304,27 +304,20 @@ export const familiesService = {
   },
 }
 
-// email + cpf são obrigatórios no CreateFamilyMemberSchema.
+// E-mail obrigatório (login). CPF opcional — se vier, valida unicidade/conflitos.
 async function createMemberWithLogin(
   fastify: FastifyInstance,
   user: AuthUser,
   familyId: string,
   input: CreateFamilyMemberInput,
 ) {
-  if (!input.cpf) {
-    throw new AppError({
-      code: 'VALIDATION_ERROR',
-      message: 'CPF é obrigatório para criar login com e-mail',
-    })
-  }
-
-  const cpfDigits = onlyDigits(input.cpf)
-  const cpfHash = hashForLookup(cpfDigits)
+  const cpfDigits = input.cpf ? onlyDigits(input.cpf) : null
+  const cpfHash = cpfDigits ? hashForLookup(cpfDigits) : null
 
   const [existingEmail, existingCpfUser, existingCpfMember] = await Promise.all([
     familiesRepository.findUserByEmail(input.email),
-    familiesRepository.findUserByCpfHash(cpfHash),
-    familiesRepository.findMemberByCpfHash(cpfHash),
+    cpfHash ? familiesRepository.findUserByCpfHash(cpfHash) : Promise.resolve(null),
+    cpfHash ? familiesRepository.findMemberByCpfHash(cpfHash) : Promise.resolve(null),
   ])
 
   if (existingEmail?.familyMember) {
@@ -345,19 +338,19 @@ async function createMemberWithLogin(
       message: conflictMessage(familyId, existingCpfMember, 'CPF'),
     })
   }
-  if (existingEmail && existingCpfUser && existingEmail.id !== existingCpfUser.id) {
+  if (cpfHash && existingEmail && existingCpfUser && existingEmail.id !== existingCpfUser.id) {
     throw new AppError({
       code: 'CONFLICT',
       message: 'CPF e e-mail informados pertencem a cadastros diferentes',
     })
   }
-  if (existingCpfUser && !existingEmail) {
+  if (cpfHash && existingCpfUser && !existingEmail) {
     throw new AppError({
       code: 'CONFLICT',
       message: conflictMessage(familyId, existingCpfUser.familyMember, 'CPF'),
     })
   }
-  if (existingEmail?.cpfHash && existingEmail.cpfHash !== cpfHash) {
+  if (cpfHash && existingEmail?.cpfHash && existingEmail.cpfHash !== cpfHash) {
     throw new AppError({
       code: 'CONFLICT',
       message: 'Este e-mail já está vinculado a outro CPF',
@@ -370,8 +363,9 @@ async function createMemberWithLogin(
     relationship: input.relationship,
     birthDate: input.birthDate,
     ...(input.biologicalSex !== undefined && { biologicalSex: input.biologicalSex }),
-    cpfEncrypted: encryptField(cpfDigits),
-    cpfHash,
+    ...(cpfDigits && cpfHash
+      ? { cpfEncrypted: encryptField(cpfDigits), cpfHash }
+      : {}),
   }
 
   // Prestador sem FamilyMember — anexa à família; senha já existe, sem e-mail de ativação.

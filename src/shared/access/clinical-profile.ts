@@ -11,7 +11,8 @@ export function isClinicalProfileComplete(input: {
   city: string | null | undefined
   weightKg: unknown
   heightM: unknown
-  bloodType: string | null | undefined
+  /** Tipo sanguíneo é opcional — não bloqueia o perfil clínico. */
+  bloodType?: string | null | undefined
 }): boolean {
   const hasWeight =
     input.weightKg !== null &&
@@ -28,8 +29,7 @@ export function isClinicalProfileComplete(input: {
     !!input.biologicalSex &&
     locationOk &&
     hasWeight &&
-    hasHeight &&
-    !!input.bloodType?.trim()
+    hasHeight
   )
 }
 
