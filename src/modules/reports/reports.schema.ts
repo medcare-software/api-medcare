@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 const paginationShape = {
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(20),
+  // Até 1000 para exportação completa dos relatórios no admin (EXPORT_PAGE_SIZE no web).
+  pageSize: z.coerce.number().int().positive().max(1000).default(20),
 }
 
 const dateRangeShape = {
