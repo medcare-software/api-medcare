@@ -192,7 +192,7 @@ export const usersService = {
       state: familyMember.user?.state ?? null,
       role: familyMember.isAdmin ? 'PATIENT_ADMIN' : 'FAMILY_MEMBER',
       status: familyMember.user?.status ?? 'ACTIVE',
-      aiEnabled: familyMember.user?.aiEnabled ?? false,
+      aiEnabled: familyMember.user?.aiEnabled ?? true,
       isFamilyAdmin: familyMember.isAdmin,
       birthDate: familyMember.birthDate,
       createdAt: familyMember.createdAt,

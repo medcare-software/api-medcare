@@ -6,7 +6,7 @@ const AI_DISABLED_MESSAGE =
 
 /**
  * Fail-closed: endpoints que gastam token de IA (risco, scan, Gmail) só
- * seguem se User.aiEnabled = true. Toggle no painel PLATFORM_ADMIN.
+ * seguem se User.aiEnabled = true (default no cadastro). Toggle off no painel PLATFORM_ADMIN.
  */
 export async function assertAiEnabled(userId: string): Promise<void> {
   const user = await db.user.findFirst({
