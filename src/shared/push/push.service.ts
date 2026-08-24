@@ -11,6 +11,35 @@ export type PushPayload = {
   data?: Record<string, unknown>
 }
 
+/** Expo Router no Android abre `data.url` ao tocar o push. Sem isso vira `appmedcare:///`. */
+function deepLinkForPushData(data?: Record<string, unknown>): string {
+  const type = typeof data?.type === 'string' ? data.type : ''
+  switch (type) {
+    case 'medication-low-stock':
+    case 'medication-interaction-risk':
+      return '/(tabs)/medications'
+    case 'exam-shared':
+    case 'exam-added':
+    case 'gmail-exam-needs-review':
+    case 'prescription-shared':
+      return '/(tabs)/exams'
+    case 'vaccine-shared':
+      return '/(tabs)/vaccines'
+    case 'diagnostic-shared':
+    case 'procedure-shared':
+      return '/(tabs)/diagnostics'
+    case 'medical-access-granted':
+    case 'medical-access-expiring':
+    case 'caregiver-access-granted':
+    case 'caregiver-access-expiring':
+      return '/(tabs)/profile/medical-access'
+    case 'admin-role-changed':
+      return '/(tabs)/profile'
+    default:
+      return '/(tabs)'
+  }
+}
+
 /** Persiste no inbox e envia pra todos os devices do usuário.
  * Falha de envio Expo não apaga o registro — o usuário ainda vê na tela. */
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
@@ -41,7 +70,10 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       sound: 'default',
       title: payload.title,
       body: payload.body,
-      data: payload.data ?? {},
+      data: {
+        ...(payload.data ?? {}),
+        url: deepLinkForPushData(payload.data),
+      },
     }))
   if (messages.length === 0) {
     console.warn(
