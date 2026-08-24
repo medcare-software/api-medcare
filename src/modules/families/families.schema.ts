@@ -64,6 +64,9 @@ const CreateFamilyMemberFields = z.object({
   birthDate: requiredDate('Data de nascimento inválida', {
     notFuture: true,
     futureMessage: 'Data de nascimento não pode ser no futuro',
+    maxExclusiveAge: 18,
+    maxExclusiveAgeMessage:
+      'Somente menores de 18 anos podem ser adicionados como membros da família',
   }),
   biologicalSex: BiologicalSexEnum.optional(),
   cpf: z

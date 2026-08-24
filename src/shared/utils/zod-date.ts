@@ -46,6 +46,22 @@ export type DateSchemaOptions = {
   /** Rejeita datas futuras (ex.: data de nascimento) — usa `futureMessage` no erro. */
   notFuture?: boolean
   futureMessage?: string
+  /** Idade máxima exclusiva em anos completos (ex.: 18 = só menores de 18). */
+  maxExclusiveAge?: number
+  maxExclusiveAgeMessage?: string
+}
+
+function isUnderExclusiveAge(iso: string, maxExclusiveAge: number): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!match) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const now = new Date()
+  let age = now.getFullYear() - year
+  const monthDiff = now.getMonth() + 1 - month
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < day)) age -= 1
+  return age < maxExclusiveAge
 }
 
 /** `z.coerce.date()` com mensagem PT-BR — a coerção padrão do Zod gera "Invalid date" em inglês. */
@@ -58,6 +74,14 @@ export function requiredDate(message: string, options?: DateSchemaOptions) {
       message: options.futureMessage ?? 'Data não pode ser no futuro',
     })
   }
+  if (options?.maxExclusiveAge != null) {
+    const limit = options.maxExclusiveAge
+    schema = schema.refine((v) => isUnderExclusiveAge(v, limit), {
+      message:
+        options.maxExclusiveAgeMessage ??
+        `Somente menores de ${limit} anos podem ser cadastrados`,
+    })
+  }
   return schema.transform((v) => new Date(v))
 }
 
@@ -68,6 +92,14 @@ export function optionalDate(message: string, options?: DateSchemaOptions) {
   if (options?.notFuture) {
     schema = schema.refine(isNotFuture, {
       message: options.futureMessage ?? 'Data não pode ser no futuro',
+    })
+  }
+  if (options?.maxExclusiveAge != null) {
+    const limit = options.maxExclusiveAge
+    schema = schema.refine((v) => isUnderExclusiveAge(v, limit), {
+      message:
+        options.maxExclusiveAgeMessage ??
+        `Somente menores de ${limit} anos podem ser cadastrados`,
     })
   }
   return schema.transform((v) => new Date(v)).optional()
