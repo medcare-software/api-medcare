@@ -11,10 +11,11 @@ import {
   recordAuditEvent,
   recordSensitiveAccess,
 } from '../../shared/security/index.js'
+import { endOfDayInBrazil, isAiCurrentlyEnabled, startOfDayInBrazil } from '../../shared/access/ai-trial.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { authRepository } from '../auth/auth.repository.js'
 import { usersRepository } from './users.repository.js'
-import type { ListUsersQuery } from './users.schema.js'
+import type { ListUsersQuery, UpdateUserAiEnabledInput } from './users.schema.js'
 
 function maskedCpf(cpfEncrypted: Uint8Array | null) {
   return cpfEncrypted ? maskCpf(decryptField(cpfEncrypted)) : null
@@ -55,7 +56,9 @@ function toUserSummary(user: Awaited<ReturnType<typeof usersRepository.findMany>
     state: user.state,
     role: user.role,
     status: user.status,
-    aiEnabled: user.aiEnabled,
+    aiEnabled: isAiCurrentlyEnabled(user),
+    aiStartsAt: user.aiStartsAt,
+    aiTrialEndsAt: user.aiTrialEndsAt,
     isFamilyAdmin: user.familyMember?.isAdmin ?? false,
     birthDate: user.familyMember?.birthDate ?? null,
     createdAt: user.createdAt,
@@ -192,7 +195,9 @@ export const usersService = {
       state: familyMember.user?.state ?? null,
       role: familyMember.isAdmin ? 'PATIENT_ADMIN' : 'FAMILY_MEMBER',
       status: familyMember.user?.status ?? 'ACTIVE',
-      aiEnabled: familyMember.user?.aiEnabled ?? true,
+      aiEnabled: familyMember.user
+        ? isAiCurrentlyEnabled(familyMember.user)
+        : true,
       isFamilyAdmin: familyMember.isAdmin,
       birthDate: familyMember.birthDate,
       createdAt: familyMember.createdAt,
@@ -211,19 +216,44 @@ export const usersService = {
     }
   },
 
-  async setAiEnabled(actor: AuthUser, id: string, aiEnabled: boolean) {
+  async setAiEnabled(actor: AuthUser, id: string, input: UpdateUserAiEnabledInput) {
     const user = await usersRepository.findById(id)
     if (!user) {
       throw new AppError({ code: 'NOT_FOUND', message: 'Usuário não encontrado' })
     }
 
-    await usersRepository.updateAiEnabled(user.id, aiEnabled)
+    const hasSchedule = input.aiStartsAt !== undefined || input.aiEndsAt !== undefined
+    await usersRepository.updateAiAccess(user.id, {
+      aiEnabled: input.aiEnabled,
+      ...(hasSchedule
+        ? {
+            aiStartsAt:
+              input.aiStartsAt === undefined
+                ? undefined
+                : input.aiStartsAt
+                  ? startOfDayInBrazil(input.aiStartsAt)
+                  : null,
+            aiTrialEndsAt:
+              input.aiEndsAt === undefined
+                ? undefined
+                : input.aiEndsAt
+                  ? endOfDayInBrazil(input.aiEndsAt)
+                  : null,
+          }
+        : input.aiEnabled
+          ? { aiStartsAt: null, aiTrialEndsAt: null }
+          : {}),
+    })
     await recordAuditEvent({
       actorId: actor.id,
-      action: aiEnabled ? 'ENABLE_USER_AI' : 'DISABLE_USER_AI',
+      action: input.aiEnabled ? 'ENABLE_USER_AI' : 'DISABLE_USER_AI',
       targetType: 'User',
       targetId: user.id,
-      metadata: { aiEnabled },
+      metadata: {
+        aiEnabled: input.aiEnabled,
+        aiStartsAt: input.aiStartsAt ?? null,
+        aiEndsAt: input.aiEndsAt ?? null,
+      },
     })
 
     return this.getById(actor, id)

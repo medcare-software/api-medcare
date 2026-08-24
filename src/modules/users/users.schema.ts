@@ -22,8 +22,22 @@ export const ListUsersQuerySchema = z.object({
 
 export type ListUsersQuery = z.infer<typeof ListUsersQuerySchema>
 
-export const UpdateUserAiEnabledSchema = z.object({
-  aiEnabled: z.boolean(),
-})
+export const UpdateUserAiEnabledSchema = z
+  .object({
+    aiEnabled: z.boolean(),
+    /** YYYY-MM-DD — início da janela. Null remove o início (vale imediatamente). */
+    aiStartsAt: z.string().date().nullable().optional(),
+    /** YYYY-MM-DD — último dia com IA. Null remove o prazo. */
+    aiEndsAt: z.string().date().nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.aiStartsAt && value.aiEndsAt && value.aiStartsAt > value.aiEndsAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A data de desligamento deve ser igual ou posterior à data de início',
+        path: ['aiEndsAt'],
+      })
+    }
+  })
 
 export type UpdateUserAiEnabledInput = z.infer<typeof UpdateUserAiEnabledSchema>

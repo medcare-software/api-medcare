@@ -1,6 +1,7 @@
 import type { BiologicalSex, Role } from '@prisma/client'
 
 import { db } from '../../config/database.js'
+import { computeAiTrialEndsAt } from '../../shared/access/ai-trial.js'
 import { familyNameFromFullName, omitUndefined } from '../../shared/utils/index.js'
 
 type ConsumerTermsAcceptance = {
@@ -105,6 +106,8 @@ export const familiesRepository = {
           privacyPolicyAcceptedAt: input.privacyPolicyAcceptedAt,
           lgpdConsentAcceptedAt: input.lgpdConsentAcceptedAt,
           consumerTermsVersion: input.consumerTermsVersion,
+          aiStartsAt: new Date(),
+          aiTrialEndsAt: computeAiTrialEndsAt(),
         }),
       })
 
@@ -233,6 +236,8 @@ export const familiesRepository = {
           cpfEncrypted: input.cpfEncrypted,
           cpfHash: input.cpfHash,
           status: 'ACTIVE' as const,
+          aiStartsAt: new Date(),
+          aiTrialEndsAt: computeAiTrialEndsAt(),
         }),
       })
 

@@ -96,8 +96,18 @@ export const usersRepository = {
     return db.user.update({ where: { id: userId }, data: { passwordHash } })
   },
 
-  updateAiEnabled(userId: string, aiEnabled: boolean) {
-    return db.user.update({ where: { id: userId }, data: { aiEnabled } })
+  updateAiAccess(
+    userId: string,
+    data: {
+      aiEnabled: boolean
+      aiStartsAt?: Date | null
+      aiTrialEndsAt?: Date | null
+    },
+  ) {
+    return db.user.update({
+      where: { id: userId },
+      data,
+    })
   },
 
   // KPIs do topo da tela — baseados em FamilyMember (pessoas gerenciadas no

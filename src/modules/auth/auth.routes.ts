@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 
+import { isAiCurrentlyEnabled } from '../../shared/access/ai-trial.js'
 import { issueTokens } from '../../shared/auth/issue-tokens.js'
 import { authenticate, authorize } from '../../shared/middlewares/index.js'
 import { decryptField } from '../../shared/security/index.js'
@@ -140,7 +141,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
         city: user.city,
         cpf: user.cpfEncrypted ? decryptField(user.cpfEncrypted) : null,
         status: user.status,
-        aiEnabled: user.aiEnabled,
+        aiEnabled: isAiCurrentlyEnabled(user),
+        aiStartsAt: user.aiStartsAt,
+        aiTrialEndsAt: user.aiTrialEndsAt,
         professionalTermsAccepted: hasAcceptedProfessionalTerms(user),
         professionalTermsVersion: user.professionalTermsVersion,
         consumerTermsAccepted: hasAcceptedConsumerTerms(user),

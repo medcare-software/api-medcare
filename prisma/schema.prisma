@@ -164,7 +164,11 @@ model User {
   status       UserStatus @default(ACTIVE)
   mfaEnabled   Boolean    @default(false)
   /// Consumo de IA no app (risco, scan de embalagem, Gmail). Off = admin desativa / cobrança avulsa.
-  aiEnabled    Boolean    @default(true)
+  aiEnabled     Boolean   @default(true)
+  /// Início da janela de IA no app. Null = já pode usar (se ainda não passou do fim).
+  aiStartsAt    DateTime?
+  /// Fim da janela de IA no app. Null = sem prazo (conta antiga ou liberação do admin).
+  aiTrialEndsAt DateTime?
   lastLoginAt  DateTime?
   // Aceite dos termos profissionais (médico / admin de clínica) — 1º login no portal
   professionalCommitmentAcceptedAt    DateTime?

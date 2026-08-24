@@ -1,0 +1,2 @@
+-- ALTER TABLE --
+ALTER TABLE "users" ADD COLUMN "aiTrialEndsAt" TIMESTAMP(3);

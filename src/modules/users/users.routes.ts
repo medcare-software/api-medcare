@@ -72,7 +72,7 @@ export default async function usersRoutes(fastify: FastifyInstance) {
           details: body.error.issues,
         })
       }
-      const user = await usersService.setAiEnabled(req.user, id, body.data.aiEnabled)
+      const user = await usersService.setAiEnabled(req.user, id, body.data)
       return reply.status(200).send({ data: user })
     },
   )
