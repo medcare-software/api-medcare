@@ -223,27 +223,25 @@ export const usersService = {
     }
 
     const hasSchedule = input.aiStartsAt !== undefined || input.aiEndsAt !== undefined
-    await usersRepository.updateAiAccess(user.id, {
-      aiEnabled: input.aiEnabled,
-      ...(hasSchedule
-        ? {
-            aiStartsAt:
-              input.aiStartsAt === undefined
-                ? undefined
-                : input.aiStartsAt
-                  ? startOfDayInBrazil(input.aiStartsAt)
-                  : null,
-            aiTrialEndsAt:
-              input.aiEndsAt === undefined
-                ? undefined
-                : input.aiEndsAt
-                  ? endOfDayInBrazil(input.aiEndsAt)
-                  : null,
-          }
-        : input.aiEnabled
-          ? { aiStartsAt: null, aiTrialEndsAt: null }
-          : {}),
-    })
+    const accessUpdate: {
+      aiEnabled: boolean
+      aiStartsAt?: Date | null
+      aiTrialEndsAt?: Date | null
+    } = { aiEnabled: input.aiEnabled }
+
+    if (hasSchedule) {
+      if (input.aiStartsAt !== undefined) {
+        accessUpdate.aiStartsAt = input.aiStartsAt ? startOfDayInBrazil(input.aiStartsAt) : null
+      }
+      if (input.aiEndsAt !== undefined) {
+        accessUpdate.aiTrialEndsAt = input.aiEndsAt ? endOfDayInBrazil(input.aiEndsAt) : null
+      }
+    } else if (input.aiEnabled) {
+      accessUpdate.aiStartsAt = null
+      accessUpdate.aiTrialEndsAt = null
+    }
+
+    await usersRepository.updateAiAccess(user.id, accessUpdate)
     await recordAuditEvent({
       actorId: actor.id,
       action: input.aiEnabled ? 'ENABLE_USER_AI' : 'DISABLE_USER_AI',
