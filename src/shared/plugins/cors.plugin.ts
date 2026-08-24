@@ -22,12 +22,28 @@ function isExpoDevOrigin(origin: string): boolean {
   }
 }
 
+/** Painel, LP e site em medcaresw.com — CORS_ORIGIN do Railway às vezes omite um host. */
+function isMedcareProductionOrigin(origin: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(origin)
+    if (protocol !== 'https:') return false
+    return hostname === 'medcaresw.com' || hostname.endsWith('.medcaresw.com')
+  } catch {
+    return false
+  }
+}
+
 const corsPlugin: FastifyPluginAsync = fp(async (fastify) => {
   const allowedOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
 
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      if (!origin || allowedOrigins.includes(origin) || isExpoDevOrigin(origin)) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        isExpoDevOrigin(origin) ||
+        isMedcareProductionOrigin(origin)
+      ) {
         cb(null, true)
         return
       }
