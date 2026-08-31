@@ -64,3 +64,17 @@ export function scoreCatalogItem(
 ): number {
   return Math.min(scoreMedicationName(query, item.medicationName), scoreMedicationName(query, item.substance))
 }
+
+const ALPHA_COMPARE = { sensitivity: 'base' as const }
+
+/** Ordem alfabética do que o app lista: nome, depois associação/fármaco, depois concentração. */
+export function compareCatalogAlpha(
+  a: { medicationName: string; substance: string; concentration: string },
+  b: { medicationName: string; substance: string; concentration: string },
+): number {
+  const byName = a.medicationName.localeCompare(b.medicationName, 'pt-BR', ALPHA_COMPARE)
+  if (byName !== 0) return byName
+  const bySubstance = a.substance.localeCompare(b.substance, 'pt-BR', ALPHA_COMPARE)
+  if (bySubstance !== 0) return bySubstance
+  return a.concentration.localeCompare(b.concentration, 'pt-BR', ALPHA_COMPARE)
+}

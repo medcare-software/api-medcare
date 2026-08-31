@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  compareCatalogAlpha,
   levenshtein,
   normalizeSearchText,
   scoreCatalogItem,
@@ -30,5 +31,15 @@ describe('anvisa-medications.fuzzy', () => {
     }
     expect(scoreCatalogItem('hemifumarato', item)).toBe(1)
     expect(scoreMedicationName('hemifumarato', item.medicationName)).toBe(Number.POSITIVE_INFINITY)
+  })
+
+  it('lists associations alphabetically by medication name', () => {
+    const rows = [
+      { medicationName: 'Novalgina', substance: 'dipirona + cafeína', concentration: '300mg' },
+      { medicationName: 'Anador', substance: 'dipirona + orfenadrina', concentration: '300mg' },
+      { medicationName: 'Dorflex', substance: 'dipirona + orfenadrina', concentration: '300mg' },
+    ]
+    const sorted = [...rows].sort(compareCatalogAlpha).map((row) => row.medicationName)
+    expect(sorted).toEqual(['Anador', 'Dorflex', 'Novalgina'])
   })
 })

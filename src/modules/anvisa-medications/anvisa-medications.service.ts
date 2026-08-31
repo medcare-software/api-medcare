@@ -2,7 +2,7 @@ import { AppError } from '../../shared/errors/index.js'
 import { recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { filesService } from '../files/files.service.js'
-import { scoreCatalogItem } from './anvisa-medications.fuzzy.js'
+import { compareCatalogAlpha, scoreCatalogItem } from './anvisa-medications.fuzzy.js'
 import { naturalKey, parseAnvisaPdf } from './anvisa-medications.parser.js'
 import { anvisaMedicationsRepository } from './anvisa-medications.repository.js'
 import type {
@@ -98,6 +98,7 @@ export const anvisaMedicationsService = {
       )
     }
 
+    const usedContains = contains.length > 0
     const ranked = candidates
       .map((item) => ({
         item,
@@ -105,10 +106,11 @@ export const anvisaMedicationsService = {
       }))
       .filter((row) => Number.isFinite(row.score))
       .sort((a, b) => {
+        // Hits por nome/fármaco (inclui associações da lista B): alfabética.
+        // Prefix/typo continua pelo score (Dorfrex → Dorflex).
+        if (usedContains) return compareCatalogAlpha(a.item, b.item)
         if (a.score !== b.score) return a.score - b.score
-        const byName = a.item.medicationName.localeCompare(b.item.medicationName, 'pt-BR')
-        if (byName !== 0) return byName
-        return a.item.concentration.localeCompare(b.item.concentration, 'pt-BR')
+        return compareCatalogAlpha(a.item, b.item)
       })
 
     const total = ranked.length
