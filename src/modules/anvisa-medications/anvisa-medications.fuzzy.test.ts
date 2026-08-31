@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { levenshtein, normalizeSearchText, scoreMedicationName } from './anvisa-medications.fuzzy.js'
+import {
+  levenshtein,
+  normalizeSearchText,
+  scoreCatalogItem,
+  scoreMedicationName,
+} from './anvisa-medications.fuzzy.js'
 
 describe('anvisa-medications.fuzzy', () => {
   it('normalizes accents and case', () => {
@@ -16,5 +21,14 @@ describe('anvisa-medications.fuzzy', () => {
 
   it('levenshtein distance for one substitution', () => {
     expect(levenshtein('dorfrex', 'dorflex')).toBe(1)
+  })
+
+  it('matches fármaco even when the brand name is different', () => {
+    const item = {
+      medicationName: 'CONCOR',
+      substance: 'bisoprolol (hemifumarato de)',
+    }
+    expect(scoreCatalogItem('hemifumarato', item)).toBe(1)
+    expect(scoreMedicationName('hemifumarato', item.medicationName)).toBe(Number.POSITIVE_INFINITY)
   })
 })

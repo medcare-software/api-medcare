@@ -15,9 +15,13 @@ type ListFilters = {
   search?: string
 }
 
+type CatalogMatchMode = 'all' | 'contains' | 'prefix'
+
 type CatalogFilters = {
   search?: string
   listType?: AnvisaListType
+  /** contains = nome/fármaco; prefix = pool pra typo. Default all (os dois). */
+  matchMode?: CatalogMatchMode
 }
 
 export type AnvisaUpsertRow = {
@@ -64,18 +68,25 @@ function catalogWhere(filters: CatalogFilters): Prisma.AnvisaReferenceMedication
   }
   if (!filters.search) return base
 
-  // Só medicationName — substance/composição não entra (evita "dipirona" trazer associações).
   const search = filters.search.trim()
   const prefix = search.slice(0, Math.min(3, search.length))
-  return {
-    ...base,
-    OR: [
-      { medicationName: { contains: search, mode: 'insensitive' } },
-      ...(prefix.length >= 2
-        ? [{ medicationName: { startsWith: prefix, mode: 'insensitive' as const } }]
-        : []),
-    ],
-  }
+  const mode = filters.matchMode ?? 'all'
+
+  const contains: Prisma.AnvisaReferenceMedicationWhereInput[] = [
+    { medicationName: { contains: search, mode: 'insensitive' } },
+    { substance: { contains: search, mode: 'insensitive' } },
+  ]
+  const prefixOr: Prisma.AnvisaReferenceMedicationWhereInput[] =
+    prefix.length >= 2
+      ? [
+          { medicationName: { startsWith: prefix, mode: 'insensitive' } },
+          { substance: { startsWith: prefix, mode: 'insensitive' } },
+        ]
+      : []
+
+  const or = mode === 'contains' ? contains : mode === 'prefix' ? prefixOr : [...contains, ...prefixOr]
+  if (or.length === 0) return base
+  return { ...base, OR: or }
 }
 
 export const anvisaMedicationsRepository = {

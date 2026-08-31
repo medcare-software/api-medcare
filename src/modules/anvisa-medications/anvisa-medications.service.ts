@@ -2,7 +2,7 @@ import { AppError } from '../../shared/errors/index.js'
 import { recordAuditEvent } from '../../shared/security/index.js'
 import type { AuthUser } from '../../shared/types/auth.types.js'
 import { filesService } from '../files/files.service.js'
-import { scoreMedicationName } from './anvisa-medications.fuzzy.js'
+import { scoreCatalogItem } from './anvisa-medications.fuzzy.js'
 import { naturalKey, parseAnvisaPdf } from './anvisa-medications.parser.js'
 import { anvisaMedicationsRepository } from './anvisa-medications.repository.js'
 import type {
@@ -83,12 +83,25 @@ export const anvisaMedicationsService = {
       return { items, total }
     }
 
-    // Com busca: pool maior + ranking fuzzy (typos PT) antes de paginar.
-    const candidates = await anvisaMedicationsRepository.findCatalogCandidates(filters, 250)
+    // Com busca: substring em nome + fármaco primeiro. Prefix só entra se não
+    // houver hit (typo tipo Dorfrex) — senão "hem" lotava o pool de 250 e
+    // escondia "bisoprolol (hemifumarato)" mais abaixo no alfabeto.
+    const contains = await anvisaMedicationsRepository.findCatalogCandidates(
+      { ...filters, matchMode: 'contains' },
+      400,
+    )
+    let candidates = contains
+    if (contains.length === 0) {
+      candidates = await anvisaMedicationsRepository.findCatalogCandidates(
+        { ...filters, matchMode: 'prefix' },
+        250,
+      )
+    }
+
     const ranked = candidates
       .map((item) => ({
         item,
-        score: scoreMedicationName(query.search!, item.medicationName),
+        score: scoreCatalogItem(query.search!, item),
       }))
       .filter((row) => Number.isFinite(row.score))
       .sort((a, b) => {

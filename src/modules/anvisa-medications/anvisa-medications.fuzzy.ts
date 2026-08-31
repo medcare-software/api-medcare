@@ -56,3 +56,11 @@ export function scoreMedicationName(query: string, medicationName: string): numb
   if (best > maxAllowed) return Number.POSITIVE_INFINITY
   return 10 + best
 }
+
+/** Rankeia pelo melhor entre nome comercial e fármaco/associação. */
+export function scoreCatalogItem(
+  query: string,
+  item: { medicationName: string; substance: string },
+): number {
+  return Math.min(scoreMedicationName(query, item.medicationName), scoreMedicationName(query, item.substance))
+}
